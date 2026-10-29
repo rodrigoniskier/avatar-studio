@@ -1,4 +1,5 @@
 """Lip-sync rápido com MuseTalk 1.5 (MIT). Funciona em GPUs pequenas (>=4 GB, fp16)."""
+import json
 import shutil
 import subprocess
 import tempfile
@@ -11,6 +12,7 @@ from .base import LipSyncEngine
 # O MuseTalk analisa TODOS os quadros do vídeo base a cada geração (~11 quadros/s) e repete o
 # trecho em vai-e-volta se a fala for mais longa. 20 s bastam e economizam minutos, RAM e disco.
 BASE_SECONDS = 20
+PICK = Path(__file__).with_name("_pick_segment.py")
 MIN_FREE_GB = 3
 
 
@@ -53,6 +55,25 @@ def patched_inference(repo: Path, dest: Path) -> Path:
     return dest
 
 
+def pick_start(base_video: Path) -> float:
+    """Início do trecho mais estável do vídeo base (rosto inteiro, parado). 0 se não der para decidir."""
+    try:
+        r = subprocess.run([config.venv_python("musetalk"), str(PICK), str(base_video), str(BASE_SECONDS)],
+                           capture_output=True, text=True, timeout=600, check=True)
+        info = json.loads(r.stdout.strip().splitlines()[-1])
+    except Exception as e:  # sem OpenCV/venv ou vídeo ilegível: comportamento antigo
+        print(f"Não foi possível escolher o trecho do vídeo base ({e}); usando o início.", flush=True)
+        return 0.0
+    if info.get("found"):
+        print(f"Trecho estável do vídeo base: começa em {info['start']} s "
+              f"(janela de {info.get('window_s')} s, rosto ocupa {info.get('face_width_ratio')} da largura).",
+              flush=True)
+    else:
+        print("Nenhum trecho estável com rosto inteiro foi encontrado no vídeo base; usando o início. "
+              "Regrave com o rosto centralizado e a câmera parada.", flush=True)
+    return float(info.get("start", 0.0))
+
+
 class MuseTalk(LipSyncEngine):
     def render(self, base_video, audio, out):
         repo = config.UPSTREAMS / "MuseTalk"
@@ -63,7 +84,8 @@ class MuseTalk(LipSyncEngine):
                 raise RuntimeError(f"Pouco espaço em disco ({free_gb:.1f} GB livres). "
                                    f"O MuseTalk precisa de pelo menos {MIN_FREE_GB} GB.\n{disk_report()}")
             short = tmp / "base.mp4"
-            subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(base_video.resolve()),
+            start = pick_start(base_video.resolve())
+            subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", str(start), "-i", str(base_video.resolve()),
                             "-t", str(BASE_SECONDS), "-an", "-c:v", "libx264", "-preset", "veryfast",
                             "-crf", "17", "-pix_fmt", "yuv420p", str(short)], check=True)
             cfg = tmp / "task.yaml"

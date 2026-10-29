@@ -4,11 +4,14 @@ Você só precisa de: um computador com internet, o celular e uma conta Google. 
 Os nomes de botões do Kaggle podem mudar um pouco; se algo estiver diferente, me mande um print.
 
 ## PARTE 1: Gravar seu material (no celular, ~10 min)
-**Vídeo (a parte mais importante)**
-1. Fique em frente a uma janela (luz natural no rosto) ou sob uma luz forte. Fundo simples.
-2. Apoie o celular parado, na altura dos olhos, na horizontal.
-3. Olhe para a câmera e **fale naturalmente por 1 a 2 minutos** (pode contar uma história ou ler um texto). Boca bem visível, sem mão na frente do rosto, sem óculos escuros.
-4. Mantenha a cabeça quase parada, com expressão neutra e agradável.
+**Vídeo (a parte mais importante: a qualidade final depende dele)**
+O programa **não cria um vídeo novo**: ele pega um trecho do seu vídeo e refaz só a região da boca/queixo para falar o novo texto (como o "avatar instantâneo" de ferramentas comerciais). Por isso:
+1. **Use um apoio fixo** (tripé, livro ou pilha de livros). Aperte gravar, **afaste-se e fique parado 3 a 5 segundos** antes de falar; o programa escolhe sozinho o trecho mais estável, mas precisa de pelo menos 5 s assim.
+2. **Enquadre do peito para cima**, com o rosto **no centro**, inteiro e bem grande (de preferência ocupando metade da largura da imagem ou mais). Quanto mais pixels de rosto, melhor a boca e a barba.
+3. Grave **na vertical ou horizontal em qualidade máxima (1080p)** e **não envie pelo WhatsApp**, que reduz muito a resolução. Passe o arquivo por cabo, Google Drive (arquivo original) ou e-mail.
+4. Luz de frente (janela), fundo simples, boca visível, sem mão na frente do rosto, **cabeça quase parada**, boca fechada no começo e no fim.
+5. Fale naturalmente por **30 a 120 segundos** (pode ler um texto).
+6. Se você tem barba, ela costuma ficar **suavizada ou borrada** no resultado, porque o modelo refaz a região do queixo em 256 pixels. Rosto maior no vídeo reduz o problema, mas não o elimina.
 
 **Áudio da voz**
 1. Em lugar silencioso (sem ventilador, TV, eco), com o celular a um palmo da boca, grave um áudio de **20 a 30 segundos** lendo um texto com voz natural, como se explicasse algo a um aluno.

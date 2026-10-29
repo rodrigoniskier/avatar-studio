@@ -107,3 +107,18 @@ def test_patch_keeps_frame_sequence_complete(tmp_path):
         "            print(\"Video generation command:\", cmd_img2video)\n")
     src = patched_inference(tmp_path, tmp_path / "p.py").read_text()
     assert "_save_png(f\"{result_img_save_path}/{str(i).zfill(8)}.png\", ori_frame)" in src
+
+
+def test_pick_start_falls_back_to_zero(tmp_path, monkeypatch):
+    from studio import config
+    from studio.engines import musetalk_lipsync as m
+    monkeypatch.setattr(config, "venv_python", lambda name: "/nao/existe/python")
+    assert m.pick_start(tmp_path / "x.mp4") == 0.0
+
+
+def test_pick_start_reads_script_result(tmp_path, monkeypatch):
+    import subprocess
+    from studio.engines import musetalk_lipsync as m
+    fake = subprocess.CompletedProcess([], 0, stdout='aviso\n{"start": 5.5, "found": true, "window_s": 20, "face_width_ratio": 0.4}\n')
+    monkeypatch.setattr(m.subprocess, "run", lambda *a, **k: fake)
+    assert m.pick_start(tmp_path / "x.mp4") == 5.5
