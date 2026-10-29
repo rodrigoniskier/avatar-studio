@@ -29,6 +29,20 @@ def _concat_wavs(parts: list[Path], out: Path) -> None:
                     "-i", str(lst), "-c", "copy", str(out)], check=True)
 
 
+def _cached_speech(profile: str, text: str, lang: str) -> Path | None:
+    """Reaproveita a fala (etapa mais demorada) de uma execução anterior com mesmos dados,
+    útil quando só o lip-sync falhou."""
+    root = config.DATA_DIR / "jobs"
+    for d in sorted(root.glob("*"), key=lambda d: d.stat().st_mtime, reverse=True) if root.exists() else []:
+        try:
+            meta = json.loads((d / "job.json").read_text())
+        except (OSError, ValueError):
+            continue
+        if meta == {"profile": profile, "text": text, "lang": lang} and (d / "speech.wav").exists():
+            return d / "speech.wav"
+    return None
+
+
 def generate(profile: str, text: str, lang: str = "pt", job_id: str | None = None) -> Path:
     pdir = config.profile_dir(profile)
     consent.require(pdir)
@@ -39,11 +53,16 @@ def generate(profile: str, text: str, lang: str = "pt", job_id: str | None = Non
 
     job_id = job_id or uuid.uuid4().hex[:12]
     jdir = config.job_dir(job_id); jdir.mkdir(parents=True, exist_ok=True)
+    previous = _cached_speech(profile, text, lang)
     (jdir / "job.json").write_text(json.dumps(
         {"profile": profile, "text": text, "lang": lang}, ensure_ascii=False))
 
-    tts, lipsync = get_tts(config.TTS_ENGINE), get_lipsync(config.LIPSYNC_ENGINE)
-    parts = tts.synthesize_batch(split_text(text), voice, jdir, lang)
     audio = jdir / "speech.wav"
-    _concat_wavs(parts, audio)
+    if previous:
+        print(f"Reaproveitando a fala já gerada em {previous}", flush=True)
+        shutil.copy(previous, audio)
+    else:
+        parts = get_tts(config.TTS_ENGINE).synthesize_batch(split_text(text), voice, jdir, lang)
+        _concat_wavs(parts, audio)
+    lipsync = get_lipsync(config.LIPSYNC_ENGINE)
     return lipsync.render(video, audio, jdir / "output.mp4")

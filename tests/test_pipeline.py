@@ -41,3 +41,22 @@ def test_media_rejects_garbage(tmp_path, monkeypatch):
     bad = tmp_path / "x"; bad.write_bytes(b"nao e audio")
     with pytest.raises((ValueError, FileNotFoundError)):
         media.prepare_voice(bad, tmp_path / "o.wav")
+
+
+def test_runner_reports_real_error():
+    import sys
+    from studio.runner import run_logged
+    with pytest.raises(RuntimeError, match="MOTIVO_REAL"):
+        run_logged([sys.executable, "-c", "import sys; print('MOTIVO_REAL', file=sys.stderr); sys.exit(1)"])
+
+
+def test_speech_reused_when_only_lipsync_failed(monkeypatch):
+    from studio import pipeline, config, consent
+    pdir = config.profile_dir("eu"); consent.register(pdir, "eu")
+    (pdir / "voice.wav").write_bytes(b"x"); (pdir / "avatar.mp4").write_bytes(b"v")
+    calls = []
+    real = pipeline.get_tts
+    monkeypatch.setattr(pipeline, "get_tts", lambda n: (calls.append(1), real(n))[1])
+    pipeline.generate("eu", "Frase um. Frase dois.")
+    pipeline.generate("eu", "Frase um. Frase dois.")
+    assert len(calls) == 1  # segunda execução reaproveita a fala
