@@ -26,5 +26,7 @@ def run() -> bool:
     if config.LIPSYNC_ENGINE == "musetalk":
         line((config.UPSTREAMS / "MuseTalk/models/musetalkV15/unet.pth").exists(),
              "pesos do MuseTalk baixados", "rode: bash scripts/setup_upstreams.sh musetalk")
+        line((config.UPSTREAMS / "MuseTalk/models/face-parse-bisent/79999_iter.pth").exists(),
+             "pesos auxiliares (face-parse) baixados", "rode: bash scripts/setup_upstreams.sh musetalk")
     print("\nTudo pronto!" if ok else "\nCorrija os itens [FALTA] acima.")
     return ok

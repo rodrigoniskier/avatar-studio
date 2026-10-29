@@ -42,16 +42,21 @@ if [ "$LIPSYNC" = musetalk ]; then
     "$PY" -c "import mmengine, mmcv, mmcv.ops, mmdet, mmpose, torch, numpy; print('imports OK', torch.__version__, numpy.__version__)"
     touch .venvs/musetalk/.ready
   fi
-  (cd upstreams/MuseTalk && PATH="$ROOT/.venvs/musetalk/bin:$PATH" sh ./download_weights.sh)
+  PY="$ROOT/.venvs/musetalk/bin/python"
+  # huggingface_hub 0.30.2 é o que o transformers 4.39 aceita (o script oficial o atualizava e quebrava tudo)
+  uv pip install --python "$PY" "huggingface_hub==0.30.2" gdown
+  "$PY" scripts/download_musetalk_weights.py upstreams/MuseTalk/models
 else
   # LatentSync 1.6 precisa de ~18 GB de VRAM: NÃO cabe no Kaggle gratuito
   if [ ! -f .venvs/latentsync/.ready ]; then
     rm -rf .venvs/latentsync
     uv venv --python 3.10 .venvs/latentsync
-    uv pip install --python .venvs/latentsync/bin/python -r upstreams/LatentSync/requirements.txt "huggingface_hub[cli]"
+    uv pip install --python .venvs/latentsync/bin/python -r upstreams/LatentSync/requirements.txt "huggingface_hub"
     touch .venvs/latentsync/.ready
   fi
-  .venvs/latentsync/bin/huggingface-cli download ByteDance/LatentSync-1.6 latentsync_unet.pt whisper/tiny.pt \
-      --local-dir upstreams/LatentSync/checkpoints
+  .venvs/latentsync/bin/python -c "
+from huggingface_hub import hf_hub_download as d
+for f in ('latentsync_unet.pt', 'whisper/tiny.pt'):
+    d('ByteDance/LatentSync-1.6', f, local_dir='upstreams/LatentSync/checkpoints')"
 fi
 echo "OK ($LIPSYNC). Os pesos do Chatterbox são baixados no primeiro uso."
