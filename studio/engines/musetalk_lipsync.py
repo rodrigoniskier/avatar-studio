@@ -27,6 +27,9 @@ PATCHES = [
     ("def fast_check_ffmpeg():", HELPER + "def fast_check_ffmpeg():"),
     ('cv2.imwrite(f"{result_img_save_path}/{str(i).zfill(8)}.png", combine_frame)',
      '_save_png(f"{result_img_save_path}/{str(i).zfill(8)}.png", combine_frame)'),
+    # tipos numpy/negativos no dsize do cv2.resize eram descartados em silêncio pelo except
+    ("res_frame = cv2.resize(res_frame.astype(np.uint8), (x2-x1, y2-y1))",
+     "res_frame = cv2.resize(np.ascontiguousarray(res_frame, dtype=np.uint8), (int(x2-x1), int(y2-y1)))"),
     ("                except:\n                    continue",
      "                except Exception as _e:\n"
      "                    print('quadro ignorado:', i, bbox, repr(_e), flush=True)\n"
@@ -64,7 +67,7 @@ class MuseTalk(LipSyncEngine):
             cfg.write_text(f"task_0:\n video_path: \"{short}\"\n"
                            f" audio_path: \"{audio.resolve()}\"\n")
             script = patched_inference(repo, tmp / "inference_patched.py")
-            run_logged([
+            notes = run_logged([
                 config.venv_python("musetalk"), str(script),
                 "--inference_config", str(cfg),
                 "--result_dir", str(tmp / "res"),
@@ -76,6 +79,7 @@ class MuseTalk(LipSyncEngine):
             if not made:
                 # o MuseTalk não avisa quando falha ao gravar os quadros/vídeo
                 raise RuntimeError("O MuseTalk terminou sem gerar o vídeo (provável falta de espaço em disco "
-                                   f"ou falha do ffmpeg). Veja as últimas linhas do log.\n{disk_report()}")
+                                   "ou falha do ffmpeg). Avisos do MuseTalk:\n" + "\n".join(notes)
+                                   + f"\n{disk_report()}")
             shutil.copy(made[0], out)
         return out

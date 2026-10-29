@@ -72,6 +72,7 @@ def test_musetalk_reports_missing_output(tmp_path, monkeypatch):
     (repo / "scripts" / "inference.py").write_text(
         "def fast_check_ffmpeg():\n    pass\n"
         "cv2.imwrite(f\"{result_img_save_path}/{str(i).zfill(8)}.png\", combine_frame)\n"
+        "res_frame = cv2.resize(res_frame.astype(np.uint8), (x2-x1, y2-y1))\n"
         "                except:\n                    continue\n"
         "            print(\"Video generation command:\", cmd_img2video)\n")
     monkeypatch.setattr(config, "UPSTREAMS", tmp_path / "up")
@@ -79,9 +80,10 @@ def test_musetalk_reports_missing_output(tmp_path, monkeypatch):
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=25:duration=30",
                     "-pix_fmt", "yuv420p", str(base)], check=True)
     seen = {}
-    monkeypatch.setattr(m, "run_logged", lambda cmd, cwd=None, **k: seen.update(cmd=cmd, env=k.get("env")))
-    with pytest.raises(RuntimeError, match="sem gerar o vídeo"):
+    monkeypatch.setattr(m, "run_logged", lambda cmd, cwd=None, **k: (seen.update(cmd=cmd, env=k.get("env")), ["quadro ignorado: 0 (1,2,3,4) TypeError('x')"])[1])
+    with pytest.raises(RuntimeError, match="sem gerar o vídeo") as e:
         m.MuseTalk().render(base, tmp_path / "a.wav", tmp_path / "o.mp4")
+    assert "quadro ignorado: 0" in str(e.value)  # o motivo aparece na mensagem final
     assert seen["cmd"][1].endswith("inference_patched.py") and seen["cmd"][-1] == "--use_float16"
     assert seen["env"]["PYTHONPATH"] == str(repo)
 
