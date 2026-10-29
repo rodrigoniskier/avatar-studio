@@ -30,7 +30,7 @@ if [ "$LIPSYNC" = musetalk ]; then
         --index-url https://download.pytorch.org/whl/cu118
     uv pip install --python "$PY" -r upstreams/MuseTalk/requirements.txt
     # setuptools>=81 removeu pkg_resources, exigido pelo mim e por builds antigos (chumpy)
-    uv pip install --python "$PY" "setuptools<81" wheel pip openmim
+    uv pip install --python "$PY" "setuptools<81" wheel pip openmim tomli
     uv pip install --python "$PY" --no-build-isolation chumpy
     export PATH="$ROOT/.venvs/musetalk/bin:$PATH"
     "$PY" -m mim install mmengine
@@ -39,7 +39,7 @@ if [ "$LIPSYNC" = musetalk ]; then
     "$PY" -m mim install "mmpose==1.1.0"
     # o openmim/mmlab atualizam o numpy; MuseTalk exige exatamente 1.23.5
     uv pip install --python "$PY" numpy==1.23.5
-    "$PY" -c "import mmcv, mmpose, mmdet, torch, numpy; print('imports OK', torch.__version__, numpy.__version__)"
+    "$PY" -c "import mmengine, mmcv, mmcv.ops, mmdet, mmpose, torch, numpy; print('imports OK', torch.__version__, numpy.__version__)"
     touch .venvs/musetalk/.ready
   fi
   (cd upstreams/MuseTalk && PATH="$ROOT/.venvs/musetalk/bin:$PATH" sh ./download_weights.sh)
