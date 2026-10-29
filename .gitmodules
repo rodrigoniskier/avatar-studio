@@ -1,0 +1,15 @@
+[submodule "upstreams/chatterbox"]
+	path = upstreams/chatterbox
+	url = https://github.com/resemble-ai/chatterbox
+[submodule "upstreams/LatentSync"]
+	path = upstreams/LatentSync
+	url = https://github.com/bytedance/LatentSync
+[submodule "upstreams/MuseTalk"]
+	path = upstreams/MuseTalk
+	url = https://github.com/TMElyralab/MuseTalk
+[submodule "upstreams/Qwen3-TTS"]
+	path = upstreams/Qwen3-TTS
+	url = https://github.com/QwenLM/Qwen3-TTS
+[submodule "upstreams/faster-whisper"]
+	path = upstreams/faster-whisper
+	url = https://github.com/SYSTRAN/faster-whisper

@@ -1,0 +1,24 @@
+<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Avatar Studio</title>
+<style>body{font:16px system-ui;max-width:640px;margin:2rem auto;padding:0 1rem}input,textarea,button,select{width:100%;margin:.3rem 0;padding:.5rem;box-sizing:border-box}fieldset{margin:1rem 0}</style>
+<h1>Avatar Studio</h1>
+<fieldset><legend>1. Perfil (uma vez)</legend>
+<input id="pname" placeholder="nome_do_perfil (sem espaços)">
+<label>Áudio da sua voz (WAV, 10–30 s, sem ruído)<input id="voice" type="file" accept="audio/*"></label>
+<label>Vídeo seu falando olhando para a câmera (MP4, 30–120 s)<input id="video" type="file" accept="video/mp4"></label>
+<label><input id="ok" type="checkbox" style="width:auto"> Sou a pessoa retratada e autorizo a geração de mídia sintética.</label>
+<button onclick="mk()">Criar perfil</button></fieldset>
+<fieldset><legend>2. Gerar vídeo</legend>
+<input id="gp" placeholder="nome_do_perfil"><textarea id="text" rows="6" placeholder="Texto que o avatar vai falar"></textarea>
+<select id="lang"><option value="pt">Português</option><option value="en">English</option><option value="es">Español</option></select>
+<button onclick="gen()">Gerar</button><p id="st"></p><video id="out" controls style="width:100%"></video></fieldset>
+<script>
+const $=i=>document.getElementById(i);
+async function mk(){const f=new FormData();f.append('voice',$('voice').files[0]);f.append('video',$('video').files[0]);f.append('consent_ok',$('ok').checked);
+const r=await fetch('/profiles/'+$('pname').value,{method:'POST',body:f});$('st').textContent=r.ok?'Perfil criado':'Erro: '+await r.text()}
+async function gen(){const f=new FormData();f.append('profile',$('gp').value);f.append('text',$('text').value);f.append('lang',$('lang').value);
+const {job_id}=await (await fetch('/jobs',{method:'POST',body:f})).json();$('st').textContent='Gerando…';
+const t=setInterval(async()=>{const j=await (await fetch('/jobs/'+job_id)).json();
+if(j.status=='done'){clearInterval(t);$('st').textContent='Pronto';$('out').src=j.url}
+else if(j.status=='error'){clearInterval(t);$('st').textContent='Erro: '+j.error}},3000)}
+</script></html>

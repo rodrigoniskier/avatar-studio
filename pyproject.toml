@@ -1,0 +1,19 @@
+[project]
+name = "avatar-studio"
+version = "0.1.0"
+description = "Estúdio pessoal de avatar em vídeo com voz clonada (estilo HeyGen), 100% open source"
+requires-python = ">=3.10"
+dependencies = ["fastapi>=0.110", "uvicorn>=0.29", "python-multipart>=0.0.9", "pydantic>=2.6"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "httpx>=0.27"]
+gemini = ["google-genai>=1.0"]
+
+[project.scripts]
+studio = "studio.cli:main"
+
+[tool.setuptools]
+packages = ["studio", "studio.engines"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
