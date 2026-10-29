@@ -7,8 +7,8 @@ from collections import deque
 ENV = {"MPLBACKEND": "Agg", "PYTHONUNBUFFERED": "1"}
 
 
-def run_logged(cmd, cwd=None, input_text=None):
-    p = subprocess.Popen(cmd, cwd=cwd, env={**os.environ, **ENV}, text=True,
+def run_logged(cmd, cwd=None, input_text=None, env=None):
+    p = subprocess.Popen(cmd, cwd=cwd, env={**os.environ, **ENV, **(env or {})}, text=True,
                          stdin=subprocess.PIPE if input_text else None,
                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     if input_text:

@@ -68,11 +68,27 @@ def test_musetalk_reports_missing_output(tmp_path, monkeypatch):
         pytest.skip("sem ffmpeg")
     from studio import config
     from studio.engines import musetalk_lipsync as m
+    repo = tmp_path / "up" / "MuseTalk"; (repo / "scripts").mkdir(parents=True)
+    (repo / "scripts" / "inference.py").write_text(
+        "def fast_check_ffmpeg():\n    pass\n"
+        "cv2.imwrite(f\"{result_img_save_path}/{str(i).zfill(8)}.png\", combine_frame)\n"
+        "                except:\n                    continue\n"
+        "            print(\"Video generation command:\", cmd_img2video)\n")
+    monkeypatch.setattr(config, "UPSTREAMS", tmp_path / "up")
     base = tmp_path / "b.mp4"
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=25:duration=30",
                     "-pix_fmt", "yuv420p", str(base)], check=True)
     seen = {}
-    monkeypatch.setattr(m, "run_logged", lambda cmd, cwd=None, **k: seen.update(cmd=cmd))  # engine "falha em silêncio"
+    monkeypatch.setattr(m, "run_logged", lambda cmd, cwd=None, **k: seen.update(cmd=cmd, env=k.get("env")))
     with pytest.raises(RuntimeError, match="sem gerar o vídeo"):
         m.MuseTalk().render(base, tmp_path / "a.wav", tmp_path / "o.mp4")
-    assert seen["cmd"][-1] == "--use_float16"
+    assert seen["cmd"][1].endswith("inference_patched.py") and seen["cmd"][-1] == "--use_float16"
+    assert seen["env"]["PYTHONPATH"] == str(repo)
+
+
+def test_patch_fails_loudly_if_upstream_changes(tmp_path):
+    from studio.engines.musetalk_lipsync import patched_inference
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "inference.py").write_text("nada a ver")
+    with pytest.raises(RuntimeError, match="MuseTalk mudou"):
+        patched_inference(tmp_path, tmp_path / "x.py")

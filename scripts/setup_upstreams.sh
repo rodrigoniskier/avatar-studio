@@ -8,8 +8,22 @@ LIPSYNC="${1:-musetalk}"
 ROOT="$PWD"
 command -v uv >/dev/null || pip install -q uv
 export UV_LINK_MODE=copy
+
+# Notebooks como o Kaggle limitam a pasta de trabalho (20 GB). Com STUDIO_HEAVY definido, ambientes e
+# modelos vão para outro disco e ficam acessíveis por link simbólico (venvs funcionam via o mesmo caminho).
+offload() {  # $1 = caminho no repositório, $2 = nome no destino
+  [ -n "${STUDIO_HEAVY:-}" ] || return 0
+  local src="$1" dst="$STUDIO_HEAVY/$2"
+  [ -L "$src" ] && return 0
+  mkdir -p "$STUDIO_HEAVY" "$(dirname "$src")"
+  if [ -e "$src" ]; then rm -rf "$dst"; echo "Movendo $src para $dst ..."; mv "$src" "$dst"; else mkdir -p "$dst"; fi
+  ln -s "$dst" "$src"
+}
+offload .venvs venvs
 UPDIR=$([ "$LIPSYNC" = musetalk ] && echo MuseTalk || echo LatentSync)
 git submodule update --init --depth 1 upstreams/chatterbox "upstreams/$UPDIR"
+
+[ "$LIPSYNC" = musetalk ] && offload upstreams/MuseTalk/models musetalk_models
 
 # --- Voz: Chatterbox (Python 3.11, torch 2.6) ---
 if [ ! -f .venvs/chatterbox/.ready ]; then

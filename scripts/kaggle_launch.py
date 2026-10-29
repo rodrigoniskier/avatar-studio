@@ -7,7 +7,7 @@ import os, re, subprocess, time
 
 REPO = "https://github.com/rodrigoniskier/avatar-studio"
 os.environ.update(STUDIO_TTS="chatterbox", STUDIO_LIPSYNC="musetalk",
-                  STUDIO_DATA="/kaggle/working/data", STUDIO_DEVICE="cuda")
+                  STUDIO_DATA="/kaggle/working/data", STUDIO_DEVICE="cuda", STUDIO_HEAVY="/root/studio_heavy")
 
 if not os.path.isdir("avatar-studio"):
     subprocess.run(f"git clone {REPO}", shell=True, check=True)
