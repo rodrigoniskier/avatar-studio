@@ -1,24 +1,43 @@
 <!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Avatar Studio</title>
-<style>body{font:16px system-ui;max-width:640px;margin:2rem auto;padding:0 1rem}input,textarea,button,select{width:100%;margin:.3rem 0;padding:.5rem;box-sizing:border-box}fieldset{margin:1rem 0}</style>
+<style>body{font:16px system-ui;max-width:640px;margin:2rem auto;padding:0 1rem}input,textarea,button,select{width:100%;margin:.3rem 0;padding:.5rem;box-sizing:border-box}fieldset{margin:1rem 0}.st{font-weight:600}.err{color:#b00020}.ok{color:#146c2e}</style>
 <h1>Avatar Studio</h1>
 <fieldset><legend>1. Perfil (uma vez)</legend>
-<input id="pname" placeholder="nome_do_perfil (sem espaços)">
-<label>Áudio da sua voz (WAV, 10–30 s, sem ruído)<input id="voice" type="file" accept="audio/*"></label>
-<label>Vídeo seu falando olhando para a câmera (MP4, 30–120 s)<input id="video" type="file" accept="video/mp4"></label>
+<p id="have" class="st"></p>
+<input id="pname" placeholder="nome_do_perfil (sem espaços ou acentos)">
+<label>Áudio da sua voz (10–30 s, sem ruído; qualquer formato)<input id="voice" type="file" accept="audio/*"></label>
+<label>Vídeo seu falando olhando para a câmera (30–120 s, MP4/MOV)<input id="video" type="file" accept="video/*"></label>
 <label><input id="ok" type="checkbox" style="width:auto"> Sou a pessoa retratada e autorizo a geração de mídia sintética.</label>
-<button onclick="mk()">Criar perfil</button></fieldset>
+<button id="bp" onclick="mk()">Criar perfil</button><p id="stp" class="st"></p></fieldset>
 <fieldset><legend>2. Gerar vídeo</legend>
 <input id="gp" placeholder="nome_do_perfil"><textarea id="text" rows="6" placeholder="Texto que o avatar vai falar"></textarea>
 <select id="lang"><option value="pt">Português</option><option value="en">English</option><option value="es">Español</option></select>
-<button onclick="gen()">Gerar</button><p id="st"></p><video id="out" controls style="width:100%"></video></fieldset>
+<button id="bg" onclick="gen()">Gerar</button><p id="stg" class="st"></p><video id="out" controls style="width:100%"></video></fieldset>
 <script>
 const $=i=>document.getElementById(i);
-async function mk(){const f=new FormData();f.append('voice',$('voice').files[0]);f.append('video',$('video').files[0]);f.append('consent_ok',$('ok').checked);
-const r=await fetch('/profiles/'+$('pname').value,{method:'POST',body:f});$('st').textContent=r.ok?'Perfil criado':'Erro: '+await r.text()}
-async function gen(){const f=new FormData();f.append('profile',$('gp').value);f.append('text',$('text').value);f.append('lang',$('lang').value);
-const {job_id}=await (await fetch('/jobs',{method:'POST',body:f})).json();$('st').textContent='Gerando…';
-const t=setInterval(async()=>{const j=await (await fetch('/jobs/'+job_id)).json();
-if(j.status=='done'){clearInterval(t);$('st').textContent='Pronto';$('out').src=j.url}
-else if(j.status=='error'){clearInterval(t);$('st').textContent='Erro: '+j.error}},3000)}
+function say(id,msg,cls){const e=$(id);e.textContent=msg;e.className='st '+(cls||'')}
+async function errText(r){const t=await r.text();try{const j=JSON.parse(t);return typeof j.detail=='string'?j.detail:JSON.stringify(j.detail)}catch(e){return r.status+' '+t.slice(0,200)}}
+async function refresh(){try{const j=await (await fetch('/profiles')).json();
+$('have').textContent=j.profiles.length?'Perfis prontos: '+j.profiles.join(', '):'Nenhum perfil criado ainda.';
+if(j.profiles.length&&!$('gp').value)$('gp').value=j.profiles[0]}catch(e){}}
+async function mk(){
+ if(!$('pname').value||!$('voice').files[0]||!$('video').files[0]||!$('ok').checked)return say('stp','Preencha o nome, escolha os dois arquivos e marque o consentimento.','err');
+ const f=new FormData();f.append('voice',$('voice').files[0]);f.append('video',$('video').files[0]);f.append('consent_ok',$('ok').checked);
+ $('bp').disabled=true;say('stp','Enviando e convertendo… (pode levar 1–2 min)');
+ try{const r=await fetch('/profiles/'+encodeURIComponent($('pname').value),{method:'POST',body:f});
+  if(r.ok){say('stp','Perfil "'+$('pname').value+'" criado!','ok');$('gp').value=$('pname').value;refresh()}
+  else say('stp','Erro ao criar perfil: '+await errText(r),'err')}
+ catch(e){say('stp','Falha de conexão ao enviar os arquivos: '+e,'err')}
+ $('bp').disabled=false}
+async function gen(){
+ if(!$('gp').value||!$('text').value)return say('stg','Informe o perfil e o texto.','err');
+ const f=new FormData();f.append('profile',$('gp').value);f.append('text',$('text').value);f.append('lang',$('lang').value);
+ $('bg').disabled=true;say('stg','Gerando… (a primeira vez carrega os modelos e demora)');
+ try{const r=await fetch('/jobs',{method:'POST',body:f});if(!r.ok)throw new Error(await errText(r));
+  const {job_id}=await r.json();
+  const t=setInterval(async()=>{try{const j=await (await fetch('/jobs/'+job_id)).json();
+   if(j.status=='done'){clearInterval(t);say('stg','Pronto!','ok');$('out').src=j.url;$('bg').disabled=false}
+   else if(j.status=='error'){clearInterval(t);say('stg','Erro: '+j.error,'err');$('bg').disabled=false}}catch(e){}},3000)}
+ catch(e){say('stg','Erro: '+e.message,'err');$('bg').disabled=false}}
+refresh();
 </script></html>

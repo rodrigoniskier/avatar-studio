@@ -23,8 +23,11 @@ def test_end_to_end_api():
     from studio.api import app
     c = TestClient(app)
     files = {"voice": ("v.wav", b"RIFF"), "video": ("a.mp4", b"fake")}
+    assert c.get("/profiles").json() == {"profiles": []}
     assert c.post("/profiles/eu", files=files, data={"consent_ok": "false"}).status_code == 400
+    assert c.get("/profiles").json() == {"profiles": []}
     assert c.post("/profiles/eu", files=files, data={"consent_ok": "true"}).status_code == 200
+    assert c.get("/profiles").json() == {"profiles": ["eu"]}
     jid = c.post("/jobs", data={"profile": "eu", "text": "Olá mundo."}).json()["job_id"]
     st = c.get(f"/jobs/{jid}").json()
     assert st["status"] == "done"

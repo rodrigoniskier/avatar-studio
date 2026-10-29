@@ -27,6 +27,9 @@ subprocess.run("curl -sL https://github.com/cloudflare/cloudflared/releases/late
                "cloudflared-linux-amd64 -o /tmp/cloudflared && chmod +x /tmp/cloudflared",
                shell=True, check=True)
 
+# encerra execuções anteriores (a célula antiga pode ter deixado o servidor ligado na porta 8000)
+subprocess.run("pkill -f 'studio serve'; pkill -f cloudflared", shell=True)
+time.sleep(2)
 subprocess.Popen(["studio", "serve", "--host", "0.0.0.0", "--port", "8000"])
 tun = subprocess.Popen(["/tmp/cloudflared", "tunnel", "--url", "http://localhost:8000"],
                        stderr=subprocess.PIPE, text=True)

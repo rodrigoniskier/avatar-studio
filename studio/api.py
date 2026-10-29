@@ -16,15 +16,24 @@ def index():
     return WEB.read_text()
 
 
+@app.get("/profiles")
+def list_profiles():
+    root = config.DATA_DIR / "profiles"
+    ok = sorted(d.name for d in root.iterdir()
+                if (d / "consent.json").exists() and (d / "voice.wav").exists()
+                and (d / "avatar.mp4").exists()) if root.exists() else []
+    return {"profiles": ok}
+
+
 @app.post("/profiles/{name}")
 async def create_profile(name: str, voice: UploadFile = File(...), video: UploadFile = File(...),
                          consent_ok: bool = Form(...)):
     if not name.isidentifier():
-        raise HTTPException(400, "Nome de perfil inválido")
+        raise HTTPException(400, "Nome de perfil inválido: use só letras, números e _ (sem espaços ou acentos)")
     if not consent_ok:
         raise HTTPException(400, "É necessário confirmar o consentimento")
     pdir = config.profile_dir(name)
-    consent.register(pdir, name)
+    pdir.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
         v, a = Path(tmp) / "v", Path(tmp) / "a"
         v.write_bytes(await voice.read()); a.write_bytes(await video.read())
@@ -33,6 +42,7 @@ async def create_profile(name: str, voice: UploadFile = File(...), video: Upload
             media.prepare_video(a, pdir / "avatar.mp4")
         except ValueError as e:
             raise HTTPException(400, str(e))
+    consent.register(pdir, name)  # só registra quando o perfil está completo
     return {"profile": name}
 
 
