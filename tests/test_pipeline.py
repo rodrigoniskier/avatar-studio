@@ -32,6 +32,7 @@ def test_end_to_end_api():
     st = c.get(f"/jobs/{jid}").json()
     assert st["status"] == "done"
     assert c.get(st["url"]).content == b"fake"
+    assert c.get("/jobs").json()["jobs"][0]["id"] == jid
 
 
 def test_media_rejects_garbage(tmp_path, monkeypatch):

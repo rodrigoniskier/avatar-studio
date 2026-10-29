@@ -63,6 +63,14 @@ def create_job(bg: BackgroundTasks, profile: str = Form(...), text: str = Form(.
     return {"job_id": job_id}
 
 
+@app.get("/jobs")
+def list_jobs():
+    root = config.DATA_DIR / "jobs"
+    done = sorted((d for d in root.iterdir() if (d / "output.mp4").exists()),
+                  key=lambda d: (d / "output.mp4").stat().st_mtime, reverse=True) if root.exists() else []
+    return {"jobs": [{"id": d.name, "url": f"/jobs/{d.name}/video"} for d in done]}
+
+
 @app.get("/jobs/{job_id}")
 def job_status(job_id: str):
     jdir = config.job_dir(job_id)

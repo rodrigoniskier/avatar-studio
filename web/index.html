@@ -13,6 +13,7 @@
 <input id="gp" placeholder="nome_do_perfil"><textarea id="text" rows="6" placeholder="Texto que o avatar vai falar"></textarea>
 <select id="lang"><option value="pt">Português</option><option value="en">English</option><option value="es">Español</option></select>
 <button id="bg" onclick="gen()">Gerar</button><p id="stg" class="st"></p><video id="out" controls style="width:100%"></video></fieldset>
+<fieldset><legend>3. Vídeos gerados (mais recentes primeiro)</legend><div id="vids">Nenhum ainda.</div><button onclick="vids()">Atualizar lista</button></fieldset>
 <script>
 const $=i=>document.getElementById(i);
 function say(id,msg,cls){const e=$(id);e.textContent=msg;e.className='st '+(cls||'')}
@@ -36,8 +37,10 @@ async function gen(){
  try{const r=await fetch('/jobs',{method:'POST',body:f});if(!r.ok)throw new Error(await errText(r));
   const {job_id}=await r.json();
   const t=setInterval(async()=>{try{const j=await (await fetch('/jobs/'+job_id)).json();
-   if(j.status=='done'){clearInterval(t);say('stg','Pronto!','ok');$('out').src=j.url;$('bg').disabled=false}
+   if(j.status=='done'){clearInterval(t);say('stg','Pronto!','ok');vids();$('out').src=j.url;$('bg').disabled=false}
    else if(j.status=='error'){clearInterval(t);say('stg','Erro: '+j.error,'err');$('bg').disabled=false}}catch(e){}},3000)}
  catch(e){say('stg','Erro: '+e.message,'err');$('bg').disabled=false}}
-refresh();
+async function vids(){try{const j=await (await fetch('/jobs')).json();
+$('vids').innerHTML=j.jobs.length?j.jobs.map((v,i)=>'<p>Vídeo '+(j.jobs.length-i)+' ('+v.id+') — <a href="'+v.url+'" target="_blank">abrir</a> · <a href="'+v.url+'" download="avatar_'+v.id+'.mp4">baixar</a></p>').join(''):'Nenhum ainda.'}catch(e){}}
+refresh();vids();setInterval(vids,15000);
 </script></html>
