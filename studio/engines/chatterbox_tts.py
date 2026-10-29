@@ -1,22 +1,23 @@
-"""Voz clonada com Chatterbox (MIT, pt-BR suportado). Requer GPU ou CPU lenta."""
+"""Voz clonada com Chatterbox (MIT, pt-BR suportado), em venv isolado (torch 2.6)."""
+import json
+import subprocess
 import sys
 from pathlib import Path
 
 from .. import config
 from .base import TTSEngine
 
+WORKER = Path(__file__).with_name("_chatterbox_worker.py")
+
 
 class ChatterboxTTS(TTSEngine):
-    def __init__(self):
-        sys.path.insert(0, str(config.UPSTREAMS / "chatterbox" / "src"))
-        from chatterbox.mtl_tts import ChatterboxMultilingualTTS
-        self.model = ChatterboxMultilingualTTS.from_pretrained(
-            device=config.DEVICE, t3_model="v3")
-
     def synthesize(self, text, voice_ref, out, lang="pt"):
-        import torchaudio as ta
-        # cfg_weight=0 evita herdar sotaque quando idioma do texto != idioma da referência
-        wav = self.model.generate(text, language_id=lang,
-                                  audio_prompt_path=str(voice_ref), cfg_weight=0.3)
-        ta.save(str(out), wav, self.model.sr)
-        return out
+        return self.synthesize_batch([text], voice_ref, out.parent, lang)[0]
+
+    def synthesize_batch(self, texts, voice_ref, out_dir, lang="pt"):
+        outs = [out_dir / f"part{i}.wav" for i in range(len(texts))]
+        req = {"texts": texts, "ref": str(voice_ref.resolve()), "outs": [str(o) for o in outs],
+               "lang": lang, "device": config.DEVICE}
+        subprocess.run([config.venv_python("chatterbox"), str(WORKER)],
+                       input=json.dumps(req), text=True, check=True)
+        return outs

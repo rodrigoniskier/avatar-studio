@@ -11,14 +11,20 @@ Claude, ChatGPT, Gemini e Copilot para docentes dão **acesso a assistentes**, n
 | **C. Google Colab gratuito** | R$ 0 | Fácil | GPU e limites não garantidos; desconecta por inatividade |
 | **D. Hugging Face Spaces (CPU) / GitHub Pages** | R$ 0 | Bom para a interface estática | Sem GPU gratuita contínua; ZeroGPU é para demos curtas e depende de plano |
 
-**Recomendação:** desenvolva e teste na sua máquina com engines `mock` (já funciona). Para gerar vídeos reais sem hardware próprio, use **B (Kaggle)**:
-1. Crie um Notebook no Kaggle, ative GPU e Internet.
-2. Cole o conteúdo de `scripts/kaggle_launch.py` e execute.
-3. O script instala tudo, sobe o app e imprime uma URL pública temporária (Cloudflare Quick Tunnel, sem conta).
-4. Envie seu perfil, gere o vídeo e **baixe o MP4** — o disco do Kaggle é temporário.
+**Decisão: Kaggle (opção B)**, com MuseTalk 1.5 como lip-sync padrão (cabe nos 16 GB).
 
-### Ajustes para 16 GB de VRAM
-Use `STUDIO_LIPSYNC=musetalk` (ou LatentSync 1.5, trocando o checkpoint no script de setup). Teste o Chatterbox e o lip-sync em sequência na mesma GPU; se faltar memória, descarregue o TTS antes do lip-sync.
+## Passo a passo no Kaggle
+1. Conta em kaggle.com (GPU e Internet podem exigir verificação de telefone). Crie um Notebook novo.
+2. Painel direito → *Session options*: **Accelerator = GPU (T4 ou P100)** e **Internet = On**.
+3. Cole o conteúdo de `scripts/kaggle_launch.py` numa célula e execute (repositório precisa ser público, ou ajuste o clone com token).
+4. Primeira vez: ~10–20 min instalando. Ao final aparece `ABRA NO NAVEGADOR: https://....trycloudflare.com`.
+5. Na página: crie o perfil (voz WAV + vídeo base + consentimento), escreva o texto, gere e **baixe o MP4**.
+6. Ao terminar, pare a sessão (economiza cota). O disco é temporário: guarde `voice.wav` e `avatar.mp4` no seu Drive.
+
+## Por que venvs separados
+Chatterbox exige PyTorch 2.6 / Python 3.11; MuseTalk exige PyTorch 2.0.1 / Python 3.10. O `scripts/setup_upstreams.sh` cria `.venvs/chatterbox` e `.venvs/musetalk` (via `uv`), e o app chama cada engine por subprocesso. TTS e lip-sync rodam em sequência, nunca ao mesmo tempo na GPU.
+
+> **Não validado em GPU ainda:** a instalação do MuseTalk (mmcv/mmpose) e a qualidade do pt-BR do Chatterbox devem ser testadas na primeira sessão. Se algo falhar, anote o erro e corrigimos o script.
 
 ## Operação
 - **Segredos:** `.env` nunca vai ao Git. `GEMINI_API_KEY` só se usar roteiro automático (chave gratuita do AI Studio; a cota gratuita pode usar seus dados para treino — não envie conteúdo sensível).

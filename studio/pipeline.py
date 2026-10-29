@@ -43,8 +43,7 @@ def generate(profile: str, text: str, lang: str = "pt", job_id: str | None = Non
         {"profile": profile, "text": text, "lang": lang}, ensure_ascii=False))
 
     tts, lipsync = get_tts(config.TTS_ENGINE), get_lipsync(config.LIPSYNC_ENGINE)
-    parts = [tts.synthesize(c, voice, jdir / f"part{i}.wav", lang)
-             for i, c in enumerate(split_text(text))]
+    parts = tts.synthesize_batch(split_text(text), voice, jdir, lang)
     audio = jdir / "speech.wav"
     _concat_wavs(parts, audio)
     return lipsync.render(video, audio, jdir / "output.mp4")

@@ -19,8 +19,8 @@ studio serve            # http://127.0.0.1:8000
 Veja [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — local com GPU NVIDIA ou **gratuito via Kaggle** (`scripts/kaggle_launch.py`).
 ```bash
 git clone --recurse-submodules <este repo> && cd avatar-studio
-bash scripts/setup_upstreams.sh
-cp .env.example .env   # STUDIO_TTS=chatterbox, STUDIO_LIPSYNC=latentsync
+bash scripts/setup_upstreams.sh musetalk   # ou: latentsync (>=18 GB VRAM)
+cp .env.example .env   # STUDIO_TTS=chatterbox, STUDIO_LIPSYNC=musetalk
 studio profile eu --voice minha_voz.wav --video meu_video.mp4 --i-consent
 studio generate eu "Olá! Este é o meu avatar falando." --lang pt
 ```

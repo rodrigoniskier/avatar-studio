@@ -14,3 +14,11 @@ def profile_dir(name: str) -> Path:
 
 def job_dir(job_id: str) -> Path:
     return DATA_DIR / "jobs" / job_id
+
+VENVS = Path(os.getenv("STUDIO_VENVS", ".venvs")).resolve()
+
+
+def venv_python(name: str) -> str:
+    """Python do ambiente isolado de cada upstream (dependências incompatíveis entre si)."""
+    p = VENVS / name / "bin" / "python"
+    return str(p) if p.exists() else "python"

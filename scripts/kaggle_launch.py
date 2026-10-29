@@ -1,17 +1,30 @@
-"""Executar numa célula de notebook Kaggle/Colab com GPU: sobe o app e abre URL pública gratuita."""
+"""Cole numa célula de um Notebook Kaggle (GPU ligada + Internet ligada) e execute.
+
+Sobe o app e imprime uma URL pública temporária (Cloudflare Quick Tunnel, sem conta).
+Primeira execução: ~10-20 min (instala ambientes e baixa modelos). Baixe o MP4 antes de encerrar.
+"""
 import os, re, subprocess, time
 
-os.environ.update(STUDIO_TTS="chatterbox", STUDIO_LIPSYNC="latentsync", STUDIO_DATA="/kaggle/working/data")
-subprocess.run("git clone https://github.com/rodrigoniskier/avatar-studio && cd avatar-studio && "
-               "bash scripts/setup_upstreams.sh && pip install -e .", shell=True, check=True)
+REPO = "https://github.com/rodrigoniskier/avatar-studio"
+os.environ.update(STUDIO_TTS="chatterbox", STUDIO_LIPSYNC="musetalk",
+                  STUDIO_DATA="/kaggle/working/data", STUDIO_DEVICE="cuda")
+
+if not os.path.isdir("avatar-studio"):
+    subprocess.run(f"git clone {REPO}", shell=True, check=True)
+os.chdir("avatar-studio")
+if not os.path.isdir(".venvs/musetalk"):
+    subprocess.run("bash scripts/setup_upstreams.sh musetalk", shell=True, check=True)
+subprocess.run("pip install -q -e .", shell=True, check=True)
 subprocess.run("curl -sL https://github.com/cloudflare/cloudflared/releases/latest/download/"
-               "cloudflared-linux-amd64 -o /usr/local/bin/cloudflared && chmod +x /usr/local/bin/cloudflared",
+               "cloudflared-linux-amd64 -o /tmp/cloudflared && chmod +x /tmp/cloudflared",
                shell=True, check=True)
-subprocess.Popen(["studio", "serve", "--port", "8000"], cwd="avatar-studio")
-tun = subprocess.Popen(["cloudflared", "tunnel", "--url", "http://localhost:8000"],
+
+subprocess.Popen(["studio", "serve", "--host", "0.0.0.0", "--port", "8000"])
+tun = subprocess.Popen(["/tmp/cloudflared", "tunnel", "--url", "http://localhost:8000"],
                        stderr=subprocess.PIPE, text=True)
 for line in tun.stderr:
     m = re.search(r"https://[-a-z0-9]+\.trycloudflare\.com", line)
     if m:
-        print("ABRA:", m.group(0)); break
-time.sleep(10**6)  # mantém a sessão viva até você parar
+        print("ABRA NO NAVEGADOR:", m.group(0), flush=True)
+        break
+time.sleep(10**6)  # mantém a sessão viva; pare o notebook quando terminar
