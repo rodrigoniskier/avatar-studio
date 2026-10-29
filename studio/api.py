@@ -3,7 +3,9 @@ from pathlib import Path
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 
-from . import config, consent, pipeline
+import tempfile
+
+from . import config, consent, media, pipeline
 
 app = FastAPI(title="Avatar Studio")
 WEB = Path(__file__).resolve().parent.parent / "web" / "index.html"
@@ -23,8 +25,14 @@ async def create_profile(name: str, voice: UploadFile = File(...), video: Upload
         raise HTTPException(400, "É necessário confirmar o consentimento")
     pdir = config.profile_dir(name)
     consent.register(pdir, name)
-    (pdir / "voice.wav").write_bytes(await voice.read())
-    (pdir / "avatar.mp4").write_bytes(await video.read())
+    with tempfile.TemporaryDirectory() as tmp:
+        v, a = Path(tmp) / "v", Path(tmp) / "a"
+        v.write_bytes(await voice.read()); a.write_bytes(await video.read())
+        try:
+            media.prepare_voice(v, pdir / "voice.wav")
+            media.prepare_video(a, pdir / "avatar.mp4")
+        except ValueError as e:
+            raise HTTPException(400, str(e))
     return {"profile": name}
 
 

@@ -29,3 +29,11 @@ def test_end_to_end_api():
     st = c.get(f"/jobs/{jid}").json()
     assert st["status"] == "done"
     assert c.get(st["url"]).content == b"fake"
+
+
+def test_media_rejects_garbage(tmp_path, monkeypatch):
+    from studio import media
+    monkeypatch.setattr(media, "NORMALIZE", True)
+    bad = tmp_path / "x"; bad.write_bytes(b"nao e audio")
+    with pytest.raises((ValueError, FileNotFoundError)):
+        media.prepare_voice(bad, tmp_path / "o.wav")

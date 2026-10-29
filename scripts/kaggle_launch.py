@@ -15,6 +15,8 @@ os.chdir("avatar-studio")
 if not os.path.isdir(".venvs/musetalk"):
     subprocess.run("bash scripts/setup_upstreams.sh musetalk", shell=True, check=True)
 subprocess.run("pip install -q -e .", shell=True, check=True)
+if subprocess.run(["studio", "doctor"]).returncode:
+    raise SystemExit("Corrija os itens [FALTA] acima (provavelmente GPU/Internet desligadas) e rode de novo.")
 subprocess.run("curl -sL https://github.com/cloudflare/cloudflared/releases/latest/download/"
                "cloudflared-linux-amd64 -o /tmp/cloudflared && chmod +x /tmp/cloudflared",
                shell=True, check=True)

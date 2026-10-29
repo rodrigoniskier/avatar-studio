@@ -25,6 +25,8 @@ studio profile eu --voice minha_voz.wav --video meu_video.mp4 --i-consent
 studio generate eu "Olá! Este é o meu avatar falando." --lang pt
 ```
 
+> Primeira vez e sem experiência? Siga o [guia passo a passo](docs/GUIA_PASSO_A_PASSO.md).
+
 ## Estrutura
 | Pasta | Conteúdo |
 |---|---|
