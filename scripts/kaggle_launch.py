@@ -12,7 +12,7 @@ os.environ.update(STUDIO_TTS="chatterbox", STUDIO_LIPSYNC="musetalk",
 if not os.path.isdir("avatar-studio"):
     subprocess.run(f"git clone {REPO}", shell=True, check=True)
 os.chdir("avatar-studio")
-if not os.path.isdir(".venvs/musetalk"):
+if not os.path.exists(".venvs/musetalk/.ready"):
     subprocess.run("bash scripts/setup_upstreams.sh musetalk", shell=True, check=True)
 subprocess.run("pip install -q -e .", shell=True, check=True)
 if subprocess.run(["studio", "doctor"]).returncode:

@@ -21,7 +21,7 @@ def run() -> bool:
     for name, engine in (("chatterbox", config.TTS_ENGINE), ("musetalk", config.LIPSYNC_ENGINE),
                          ("latentsync", config.LIPSYNC_ENGINE)):
         if engine == name:
-            line((config.VENVS / name / "bin" / "python").exists(), f"ambiente do {name}",
+            line((config.VENVS / name / ".ready").exists(), f"ambiente do {name}",
                  "rode: bash scripts/setup_upstreams.sh " + (name if name != "chatterbox" else "musetalk"))
     if config.LIPSYNC_ENGINE == "musetalk":
         line((config.UPSTREAMS / "MuseTalk/models/musetalkV15/unet.pth").exists(),
