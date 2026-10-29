@@ -20,3 +20,9 @@ def run_logged(cmd, cwd=None, input_text=None):
     if p.wait():
         raise RuntimeError(f"{os.path.basename(str(cmd[0]))} falhou (código {p.returncode}):\n"
                            + "\n".join(tail))
+
+
+def disk_report() -> str:
+    """Espaço em disco dos locais usados (falha silenciosa por disco cheio é comum em notebooks)."""
+    out = subprocess.run(["df", "-h", "/", "/tmp", os.getcwd()], capture_output=True, text=True)
+    return out.stdout.strip()

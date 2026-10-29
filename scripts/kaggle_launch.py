@@ -20,6 +20,8 @@ if r.returncode:
     tail = open("/kaggle/working/setup.log", errors="replace").read().splitlines()[-40:]
     raise SystemExit("\n\n===== A INSTALAÇÃO FALHOU. COPIE DAQUI PARA BAIXO E ENVIE =====\n"
                      + "\n".join(tail))
+# libera caches do instalador (centenas de MB a vários GB) e mostra o espaço disponível
+subprocess.run("rm -rf /root/.cache/uv /root/.cache/pip; df -h / /tmp /kaggle/working", shell=True)
 subprocess.run("pip install -q -e .", shell=True, check=True)
 if subprocess.run(["studio", "doctor"]).returncode:
     raise SystemExit("Corrija os itens [FALTA] acima (provavelmente GPU/Internet desligadas) e rode de novo.")

@@ -60,3 +60,19 @@ def test_speech_reused_when_only_lipsync_failed(monkeypatch):
     pipeline.generate("eu", "Frase um. Frase dois.")
     pipeline.generate("eu", "Frase um. Frase dois.")
     assert len(calls) == 1  # segunda execução reaproveita a fala
+
+
+def test_musetalk_reports_missing_output(tmp_path, monkeypatch):
+    import shutil, subprocess
+    if not shutil.which("ffmpeg"):
+        pytest.skip("sem ffmpeg")
+    from studio import config
+    from studio.engines import musetalk_lipsync as m
+    base = tmp_path / "b.mp4"
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=25:duration=30",
+                    "-pix_fmt", "yuv420p", str(base)], check=True)
+    seen = {}
+    monkeypatch.setattr(m, "run_logged", lambda cmd, cwd=None, **k: seen.update(cmd=cmd))  # engine "falha em silêncio"
+    with pytest.raises(RuntimeError, match="sem gerar o vídeo"):
+        m.MuseTalk().render(base, tmp_path / "a.wav", tmp_path / "o.mp4")
+    assert seen["cmd"][-1] == "--use_float16"
