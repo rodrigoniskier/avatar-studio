@@ -94,3 +94,16 @@ def test_patch_fails_loudly_if_upstream_changes(tmp_path):
     (tmp_path / "scripts" / "inference.py").write_text("nada a ver")
     with pytest.raises(RuntimeError, match="MuseTalk mudou"):
         patched_inference(tmp_path, tmp_path / "x.py")
+
+
+def test_patch_keeps_frame_sequence_complete(tmp_path):
+    from studio.engines.musetalk_lipsync import patched_inference
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "inference.py").write_text(
+        "def fast_check_ffmpeg():\n    pass\n"
+        "cv2.imwrite(f\"{result_img_save_path}/{str(i).zfill(8)}.png\", combine_frame)\n"
+        "res_frame = cv2.resize(res_frame.astype(np.uint8), (x2-x1, y2-y1))\n"
+        "                except:\n                    continue\n"
+        "            print(\"Video generation command:\", cmd_img2video)\n")
+    src = patched_inference(tmp_path, tmp_path / "p.py").read_text()
+    assert "_save_png(f\"{result_img_save_path}/{str(i).zfill(8)}.png\", ori_frame)" in src

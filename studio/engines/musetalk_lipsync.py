@@ -31,8 +31,11 @@ PATCHES = [
     ("res_frame = cv2.resize(res_frame.astype(np.uint8), (x2-x1, y2-y1))",
      "res_frame = cv2.resize(np.ascontiguousarray(res_frame, dtype=np.uint8), (int(x2-x1), int(y2-y1)))"),
     ("                except:\n                    continue",
+     # sem rosto detectado (bbox 0,0,0,0) o quadro original é mantido: a sequência de PNG fica
+     # completa (o ffmpeg exige começar em 0) e o áudio continua sincronizado
      "                except Exception as _e:\n"
      "                    print('quadro ignorado:', i, bbox, repr(_e), flush=True)\n"
+     "                    _save_png(f\"{result_img_save_path}/{str(i).zfill(8)}.png\", ori_frame)\n"
      "                    continue"),
     ('            print("Video generation command:", cmd_img2video)',
      '            print("Quadros gravados:", len(os.listdir(result_img_save_path)), "em", result_img_save_path, flush=True)\n'
