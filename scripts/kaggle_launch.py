@@ -13,7 +13,13 @@ if not os.path.isdir("avatar-studio"):
     subprocess.run(f"git clone {REPO}", shell=True, check=True)
 os.chdir("avatar-studio")
 if not os.path.exists(".venvs/musetalk/.ready"):
-    subprocess.run("bash scripts/setup_upstreams.sh musetalk", shell=True, check=True)
+    # grava o log completo e, se falhar, repete só o trecho final (onde está o motivo do erro)
+    r = subprocess.run("bash scripts/setup_upstreams.sh musetalk 2>&1 | tee /kaggle/working/setup.log; "
+                       "exit ${PIPESTATUS[0]}", shell=True, executable="/bin/bash")
+    if r.returncode:
+        tail = open("/kaggle/working/setup.log", errors="replace").read().splitlines()[-40:]
+        raise SystemExit("\n\n===== A INSTALAÇÃO FALHOU. COPIE DAQUI PARA BAIXO E ENVIE =====\n"
+                         + "\n".join(tail))
 subprocess.run("pip install -q -e .", shell=True, check=True)
 if subprocess.run(["studio", "doctor"]).returncode:
     raise SystemExit("Corrija os itens [FALTA] acima (provavelmente GPU/Internet desligadas) e rode de novo.")
