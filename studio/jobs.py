@@ -9,6 +9,7 @@ from contextlib import contextmanager
 
 from . import config, pipeline
 from .artifacts import write_json
+from .lease import worker_lease
 
 
 @contextmanager
@@ -60,6 +61,9 @@ def approve_audio(jid: str):
 
 
 def retry(jid: str):
+    row = get(jid)
+    if json.loads(row["settings"]) != pipeline.settings():
+        raise ValueError("A configuração mudou. Crie um novo trabalho; retomar não pode trocar os modelos aprovados.")
     with database() as db:
         changed = db.execute("UPDATE jobs SET status='queued', error=NULL WHERE id=? AND status='error'", (jid,))
         if not changed.rowcount:
@@ -96,13 +100,18 @@ def drain_one() -> bool:
         try:
             if json.loads(row["settings"]) != pipeline.settings():
                 raise ValueError("A configuração mudou desde a criação. Crie um novo trabalho com os modelos atuais.")
-            pipeline.generate(**json.loads(row["request"]), job_id=row["id"], audio_approved=row["phase"] == "render")
+            token = worker_lease.set(lock.fileno())
+            try:
+                pipeline.generate(**json.loads(row["request"]), job_id=row["id"], audio_approved=row["phase"] == "render")
+            finally:
+                worker_lease.reset(token)
             status = "awaiting_audio"
             if row["phase"] == "render":
                 report = json.loads((config.job_dir(row["id"]) / "quality.json").read_text())
                 status = "simulation" if report["technical"] == "simulation" else "review"
             with database() as db:
-                db.execute("UPDATE jobs SET status=? WHERE id=?", (status, row["id"]))
+                db.execute("UPDATE jobs SET status=?, settings=? WHERE id=?",
+                           (status, json.dumps(pipeline.settings(), sort_keys=True), row["id"]))
         except Exception as error:
             with database() as db:
                 db.execute("UPDATE jobs SET status='error', error=? WHERE id=?", (str(error), row["id"]))

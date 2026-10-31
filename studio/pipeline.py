@@ -6,7 +6,7 @@ import subprocess
 import uuid
 from pathlib import Path
 
-from . import config, consent, media, quality, audio_quality
+from . import config, consent, media, quality, audio_quality, provenance, resources
 from .artifacts import digest, signature, write_json
 from .engines import get_lipsync, get_tts, get_video
 
@@ -54,8 +54,16 @@ def engine_versions() -> dict:
         if (path / ".git").exists():
             result = subprocess.run(["git", "-C", str(path), "rev-parse", "HEAD"], capture_output=True, text=True)
             versions[name] = result.stdout.strip()
+            versions[name + ":source"] = signature(provenance.inventory(path, {".py", ".yaml", ".yml"}, content=True))
     for path in config.MODELS.glob("**/download.json"):
         versions[str(path.relative_to(config.MODELS))] = digest(path)
+    versions["tts_weights"] = (provenance.weights(config.MODELS / "qwen3") if config.TTS_ENGINE == "qwen3"
+                               else provenance.chatterbox_weights() if config.TTS_ENGINE == "chatterbox" else "mock")
+    versions["video_weights"] = signature({
+        "generative": provenance.weights(config.MODELS / config.VIDEO_ENGINE),
+        "wan": provenance.weights(config.MODELS / "wan-animate"),
+        "musetalk": provenance.weights(config.UPSTREAMS / "MuseTalk/models"),
+        "latentsync": provenance.weights(config.UPSTREAMS / "LatentSync/checkpoints")})
     return versions
 
 
@@ -74,9 +82,10 @@ def speech_key(profile: str, text: str, lang: str) -> str:
     opts = settings()
     # Video settings must not force re-synthesis. TTS implementations and upstream versions do.
     voice_versions = {k: v for k, v in opts["versions"].items()
-                      if "tts" in k or "worker" in k or "qwen3" in k
-                      or k in {"chatterbox", "Qwen3-TTS", "base.py"}}
-    return signature({"schema": 2, "profile": profile, "text": text, "lang": lang,
+                      if k in {"base.py", "tts_weights", "chatterbox_tts.py", "_chatterbox_worker.py", "qwen_tts.py", "_qwen_worker.py"}
+                      or "qwen3" in k or k.startswith(("chatterbox", "Qwen3-TTS"))
+                      or (config.TTS_ENGINE == "qwen3" and k == "attention_compat.py")}
+    return signature({"schema": 3, "profile": profile, "text": text, "lang": lang,
                       "reference": digest(voice), "transcript": digest(transcript) if transcript.exists() else None,
                       "engine": opts["tts"], "model": opts["qwen_model"], "revision": opts["revision"],
                       "seed": opts["seed"], "cfg": opts["cfg"], "exaggeration": opts["exaggeration"],
@@ -112,9 +121,11 @@ def generate(profile: str, text: str, lang: str = "pt", job_id: str | None = Non
         if not path.exists():
             raise FileNotFoundError(f"Falta {path.name} no perfil {profile}")
     tts = get_tts(config.TTS_ENGINE)
+    tts.validate_reference(voice, lang)
     if mode in {"dub", "motion"}:
         get_lipsync(config.LIPSYNC_ENGINE)
     if mode != "dub":
+        resources.require("wan-animate" if mode == "motion" else config.VIDEO_ENGINE)
         get_video("wan-animate" if mode == "motion" else config.VIDEO_ENGINE)
         if not (pdir / "identity.png").exists():
             raise ValueError("Falta identity.png. Crie um novo perfil com imagem de identidade.")
@@ -142,6 +153,7 @@ def generate(profile: str, text: str, lang: str = "pt", job_id: str | None = Non
             parts = tts.synthesize_batch(chunks, voice, jdir, lang)
             _concat_wavs(parts, audio)
         write_json(jdir / "speech_quality.json", audio_quality.inspect(audio, text, lang))
+        key = speech_key(profile, text, lang)  # first synthesis may populate the upstream's weight cache
         write_json(jdir / "speech.json", {"key": key, "sha256": digest(audio)})
         return audio
     output = jdir / "rendering.mp4"
@@ -162,10 +174,16 @@ def _render_scenes(pdir, jdir, audio, output, mode, prompt):
     engine_name = "wan-animate" if mode == "motion" else config.VIDEO_ENGINE
     engine = get_video(engine_name)
     folder = jdir / "scenes"
-    parts = media.split_audio(audio, folder, config.SCENE_SECONDS)
-    videos, offset = [], 0.0
     identity = pdir / "identity.png"
     movement = jdir / "motion.mp4" if mode == "motion" else None
+    if movement and media.duration(movement) + 0.05 < media.duration(audio):
+        raise ValueError("O vídeo de movimento deve cobrir toda a fala; não será repetido.")
+    if mode == "motion" and prompt.strip():
+        # This upstream transfers the driving performance; arbitrary text is ignored by its model.
+        write_json(jdir / "motion_direction.json", {"text_direction_supported": False,
+                   "source": "driving_video", "note": "Movimentos vêm do vídeo separado, sem controle textual."})
+    parts = media.split_audio(audio, folder, config.SCENE_SECONDS)
+    videos, offset = [], 0.0
     for i, part in enumerate(parts):
         scene = folder / f"scene{i:04d}.mp4"
         stamp = scene.with_suffix(".ready.json")
@@ -181,17 +199,15 @@ def _render_scenes(pdir, jdir, audio, output, mode, prompt):
             raw = folder / f"raw{i:04d}.mp4"
             driving = None
             if movement:
-                if media.duration(movement) + 0.05 < offset + seconds:
-                    raise ValueError("O vídeo de movimento deve cobrir toda a fala; não será repetido.")
                 driving = folder / f"motion{i:04d}.mp4"
                 media._run(["ffmpeg", "-y", "-loglevel", "error", "-ss", str(offset), "-i", str(movement),
-                            "-t", str(seconds), "-an", "-r", "25", "-c:v", "libx264", str(driving)])
+                            "-t", str(seconds), "-an", "-r", "30", "-c:v", "libx264", "-crf", "0", str(driving)])
             engine.render(identity, driving, part, prompt, raw, config.SEED + i)
             trimmed = folder / f"trim{i:04d}.mp4"
             media._run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(raw), "-t", str(seconds),
-                        "-an", "-r", "25", "-c:v", "libx264", "-crf", "17", str(trimmed)])
+                        "-an", "-r", "25", "-c:v", "libx264", "-crf", "0", str(trimmed)])
             if mode == "motion":
-                get_lipsync(config.LIPSYNC_ENGINE).render(trimmed, part, scene)
+                get_lipsync(config.LIPSYNC_ENGINE).render(trimmed, part, scene, preserve_motion=True)
             else:
                 media._run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(trimmed), "-i", str(part),
                             "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-shortest", str(scene)])

@@ -4,12 +4,13 @@ import tempfile
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.concurrency import run_in_threadpool
 
-from . import config, jobs, profiles
+from . import config, jobs, profiles, pipeline
 
 
 @asynccontextmanager
@@ -27,9 +28,20 @@ WEB = Path(__file__).resolve().parent.parent / "web" / "index.html"
 
 @app.middleware("http")
 async def authorization(request: Request, call_next):
+    host = request.headers.get("host", "").lower()
+    origin = request.headers.get("origin")
+    if origin:
+        try:
+            parsed = urlsplit(origin)
+        except ValueError:
+            return JSONResponse({"detail": "Origem inválida."}, status_code=403)
+        if parsed.scheme not in {"http", "https"} or parsed.netloc.lower() != host:
+            return JSONResponse({"detail": "Origem da requisição não autorizada."}, status_code=403)
+    if not config.ACCESS_TOKEN and request.url.hostname not in {"localhost", "127.0.0.1", "::1"}:
+        return JSONResponse({"detail": "Host não autorizado. Para rede, configure a chave de sessão."}, status_code=403)
     if config.ACCESS_TOKEN and request.url.path != "/":
         supplied = request.headers.get("authorization", "").removeprefix("Bearer ")
-        if not hmac.compare_digest(supplied, config.ACCESS_TOKEN):
+        if not hmac.compare_digest(supplied.encode("utf-8"), config.ACCESS_TOKEN.encode("utf-8")):
             return JSONResponse({"detail": "Informe a chave de acesso desta sessão."}, status_code=401)
     try:
         return await call_next(request)
@@ -46,9 +58,13 @@ def index():
 
 @app.get("/capabilities")
 def capabilities():
+    from . import resources
+    hardware = resources.snapshot()
     return {"free_only": True, "tts": config.TTS_ENGINE, "lipsync": config.LIPSYNC_ENGINE,
             "video": config.VIDEO_ENGINE, "simulation": "mock" in {config.TTS_ENGINE, config.LIPSYNC_ENGINE},
-            "modes": ["dub", "avatar", "motion"]}
+            "modes": ["dub", "avatar", "motion"],
+            "generative_resources": {name: resources.check(name, hardware) for name in ("infinitetalk", "wan-animate")},
+            "motion_text_direction": False}
 
 
 @app.get("/profiles")
@@ -101,19 +117,24 @@ def reference_voice(name: str):
 async def create_job(profile: str = Form(...), text: str = Form(...), lang: str = Form("pt"),
                      mode: str = Form("dub"), prompt: str = Form("Natural speaking, restrained gestures, static camera."),
                      motion: UploadFile | None = File(None)):
-    from . import consent, pipeline, media
+    from . import consent, pipeline, media, resources
     consent.require(config.profile_dir(profile))
     pipeline.split_text(text)
     if len(text) > 50000 or len(prompt) > 4000 or mode not in {"dub", "avatar", "motion"} or lang not in {"pt", "en", "es"}:
         raise HTTPException(400, "Texto, idioma, direção ou modo inválido.")
     if mode == "motion" and motion is None:
         raise HTTPException(400, "Envie o vídeo de movimento.")
+    if mode != "dub":
+        await run_in_threadpool(resources.require, "wan-animate" if mode == "motion" else config.VIDEO_ENGINE)
+    if mode == "motion":
+        prompt = ""  # the driving video controls the action, not this field
     jid = uuid.uuid4().hex[:12]
     folder = config.job_dir(jid)
     folder.mkdir(parents=True)
     if motion:
         src = await save_upload(motion, folder, "motion_original")
-        await run_in_threadpool(media.prepare_video, src, folder / "motion.mp4", min_seconds=0.1, max_seconds=None)
+        await run_in_threadpool(media.prepare_video, src, folder / "motion.mp4", min_seconds=0.1,
+                                max_seconds=None, fps=None, lossless=True)
     jobs.enqueue({"profile": profile, "text": text, "lang": lang, "mode": mode, "prompt": prompt}, jid)
     return {"job_id": jid}
 
@@ -127,6 +148,7 @@ def list_jobs():
 def job_status(job_id: str):
     row = jobs.get(job_id)
     result = {"status": row["status"], "error": row["error"], "phase": row["phase"],
+              "retryable": row["status"] == "error" and json.loads(row["settings"]) == pipeline.settings(),
               "scenes_completed": len(list((config.job_dir(job_id) / "scenes").glob("*.ready.json"))),
               "audio_url": f"/jobs/{job_id}/audio", "url": f"/jobs/{job_id}/video"}
     report = config.job_dir(job_id) / "quality.json"

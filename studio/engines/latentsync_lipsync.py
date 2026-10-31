@@ -1,5 +1,4 @@
 """Lip-sync com LatentSync 1.6 (Apache-2.0). Exige ~18 GB de VRAM (1.5: ~8 GB)."""
-from pathlib import Path
 
 from .. import config
 from ..runner import run_logged
@@ -7,7 +6,7 @@ from .base import LipSyncEngine
 
 
 class LatentSync(LipSyncEngine):
-    def render(self, base_video, audio, out):
+    def render(self, base_video, audio, out, *, preserve_motion=False):
         if not 20 <= config.LIPSYNC_STEPS <= 50 or not 1 <= config.LIPSYNC_GUIDANCE <= 3:
             raise ValueError("LatentSync requer 20–50 passos e guidance de 1 a 3.")
         repo = config.UPSTREAMS / "LatentSync"

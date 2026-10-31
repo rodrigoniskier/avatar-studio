@@ -9,5 +9,9 @@ jobs:
         with: { python-version: "3.11" }
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: pip install -e ".[dev]"
+      - run: pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cpu
+      - run: git submodule update --init --depth 1 upstreams/InfiniteTalk upstreams/Wan2.2 upstreams/MuseTalk
+      - run: python -c "import torch; assert not torch.cuda.is_available()"
+      - run: ruff check studio scripts tests --select E9,F
       - run: pytest -q
       - run: bash -n scripts/setup_upstreams.sh scripts/setup_generative.sh

@@ -21,7 +21,7 @@ def test_requires_consent():
 
 def test_end_to_end_api():
     from studio.api import app
-    c = TestClient(app)
+    c = TestClient(app, base_url="http://localhost")
     files = {"voice": ("v.wav", b"RIFF"), "video": ("a.mp4", b"fake")}
     assert c.get("/profiles").json() == {"profiles": []}
     assert c.post("/profiles/eu", files=files, data={"consent_ok": "false"}).status_code == 400

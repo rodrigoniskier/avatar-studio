@@ -1,21 +1,25 @@
-# Validação da versão 0.2.0
+# Validação após revisões independentes — 0.2.1
 
-Data: 31/10/2026. Base: main `ada89721463f7f974ea4f5c71905af2acce3d370`.
+Data: 31/10/2026. Revisão anterior: PR #1 em `71eb4238115099faf66d6dff45f55ceec4b340d9`, com 40 testes. Alterações corretivas descritas em INDEPENDENT_REVIEW_FIXES.md.
 
 ## Verificações executadas
 
-- 40 testes CPU, com pytest: aprovação de áudio, fila persistente, trava contra consumidores concorrentes, retomada após falha, rejeição de referências alteradas, cache por conteúdo/revisão/parâmetros, simulação explícita e autenticação.
-- Processamento real com FFmpeg: preservação de vídeo vertical de 1280 pixels de altura, inspeção de faixas/duração, decodificação completa e montagem/retomada de cenas.
-- Contratos dos adaptadores: imagem+áudio no InfiniteTalk, identidade+movimento separado no Wan-Animate, Qwen local com transcrição, sem ativação de FLUX ou extensão paga de prompt.
-- HTTP real com servidor Uvicorn e consumidor automático: autorização, upload, fala, aprovação e download. Inferência neural substituída pelos motores mock.
-- Ruff para erros de sintaxe/nomes indefinidos; compilação Python, sintaxe JavaScript com Node, `bash -n` e `git diff --check`.
+- 93 testes CPU com pytest, incluindo cálculos reais PyTorch 2.4.1+cpu, arquivos reais FFmpeg e código dos upstreams nos SHAs fixados.
+- Comparação de atenção com softmax explícito independente: padding, comprimentos variáveis, causalidade inferior direita, janelas, escala, layout facial e rejeição de valores não finitos. As funções efetivas dos upstreams são extraídas dos overlays e executadas sem FlashAttention.
+- Regressão MuseTalk com cenas de 1,5/3/4,8/7/12/15s, preservando todos os frames; código real do adaptador e do script MuseTalk, com inferência neural substituída.
+- Pipeline motion com cenas 15+3s, FFmpeg real, política de cena inteira e montagem sem recompressão. Inferência neural substituída.
+- Fila, aprovação, retomada, alteração de referência/pesos/fontes, Host/Origin, token malformado, pré-checagem de recursos e plano de download integral antes de transferir pesos.
+- Queda real do processo pai, com subprocesso de inferência mantendo a trava até terminar; sem GPU, usando processo de teste.
+- Ruff F/E9, compilação Python, sintaxe JavaScript/Node, Bash e git diff --check. O CI instala Torch CPU e inicializa os submódulos necessários para repetir os contratos.
 
 ## Limites
 
-Não foram instalados nem executados modelos neurais em GPU. Não há medição de semelhança vocal/facial, qualidade de mãos/corpo, sincronização perceptual ou desempenho em T4/P100. Os adaptadores têm testes de contrato, não validação de inferência real.
+Nenhum checkpoint neural foi carregado nem executado em GPU. Os cálculos de atenção são reais em CPU; as inferências TTS/lip-sync/vídeo continuam substituídas nos testes de integração. Não há medição de semelhança vocal/facial, mãos/corpo, sincronização perceptual ou desempenho em T4/P100.
 
-A verificação visual no navegador não foi concluída: Chromium não estava instalado e o download do binário falhou neste ambiente. A sintaxe do JavaScript e o fluxo HTTP foram verificados; não apresentamos isso como aprovação visual da interface.
+Não se executaram integralmente os instaladores pesados. O microensaio CUDA adicionado ao instalador/doctor é um diagnóstico para o ambiente do usuário, ainda não executado neste ambiente CPU. Não comprova inferência 14B. Pesos não foram baixados nesta correção.
 
-## Primeiro ensaio GPU
+O primeiro parecer independente executou o fluxo da interface em Chromium na revisão anterior. As alterações atuais tiveram sintaxe JavaScript e rotas verificadas, sem nova aprovação visual no navegador neste ambiente.
 
-Usar apenas hardware próprio ou uma sessão gratuita compatível, sem contratar computação. Instalar um caminho por vez, começando por 10–15s. Comparar voz original/gerada em português, depois rosto falando, meio corpo gesticulando e corpo inteiro em movimento. Registrar GPU, RAM, disco, resolução, duração, tempo e tentativas descartadas. O resultado só deve ser publicado após revisão da pessoa retratada.
+## Ensaio pendente
+
+Usar apenas hardware próprio ou sessão gratuita compatível, sem contratar recursos. Conferir RAM/VRAM/disco; executar `studio doctor --mode avatar|motion` e o microensaio antes de uma cena curta. Só depois comparar voz pt-BR, rosto, meio corpo e corpo inteiro. Registrar hardware, parâmetros, duração, tempo e descartes. O resultado exige revisão da pessoa retratada antes de publicação.

@@ -47,7 +47,11 @@ def main():
                 parser.error("--mode motion requer --motion")
             folder = config.job_dir(jid)
             folder.mkdir(parents=True)
-            media.prepare_video(args.motion, folder / "motion.mp4", min_seconds=0.1, max_seconds=None)
+            media.prepare_video(args.motion, folder / "motion.mp4", min_seconds=0.1, max_seconds=None,
+                                fps=None, lossless=True)
+        if args.mode == "motion":
+            args.prompt = ""
+            print("A atuação vem do vídeo de movimento; este motor não aceita direção textual.")
         print(pipeline.generate(args.profile, args.text, args.lang, jid, mode=args.mode, prompt=args.prompt))
         print(f"Ouça o áudio. Para aprovar: studio approve-audio {jid}")
     elif args.cmd == "approve-audio":

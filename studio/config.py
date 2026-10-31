@@ -1,5 +1,9 @@
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Only this working directory; explicit environment variables retain precedence.
+load_dotenv(Path.cwd() / ".env", override=False, interpolate=False)
 
 DATA_DIR = Path(os.getenv("STUDIO_DATA", "data")).resolve()
 TTS_ENGINE = os.getenv("STUDIO_TTS", "chatterbox")

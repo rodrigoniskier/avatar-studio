@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from .. import config
+from .. import config, media
 from ..runner import disk_report, run_logged
 from .base import LipSyncEngine
 
@@ -17,6 +17,11 @@ MIN_FREE_GB = 3
 
 
 HELPER = """
+def _forward_frames(items, length):
+    if not items or length > len(items) + 2:
+        raise RuntimeError('A cena não cobre a fala; repetição de movimentos bloqueada.')
+    return items[:length] + [items[-1]] * max(0, length - len(items))
+
 def _save_png(path, img):
     img = np.ascontiguousarray(img)
     if not cv2.imwrite(path, img):  # o cv2 falha em silêncio; tenta de novo com PIL
@@ -45,12 +50,23 @@ PATCHES = [
 ]
 
 
-def patched_inference(repo: Path, dest: Path) -> Path:
+def patched_inference(repo: Path, dest: Path, preserve_motion: bool = False) -> Path:
     src = (repo / "scripts" / "inference.py").read_text()
     for old, new in PATCHES:
         if old not in src:
             raise RuntimeError(f"MuseTalk mudou: trecho não encontrado: {old[:60]!r}")
         src = src.replace(old, new, 1)
+    if preserve_motion:
+        for name in ("frame_list", "coord_list", "input_latent_list"):
+            old = f"{name}_cycle = {name} + {name}[::-1]"
+            if old not in src:
+                raise RuntimeError("Contrato de repetição do MuseTalk mudou; revisão necessária.")
+            new = f"{name}_cycle = _forward_frames({name}, len(whisper_chunks))"
+            if name == "input_latent_list":
+                new = ("if len(input_latent_list) != len(frame_list):\n"
+                       "                raise RuntimeError('Rosto ausente em quadros da cena.')\n"
+                       "            " + new)
+            src = src.replace(old, new, 1)
     dest.write_text(src)
     return dest
 
@@ -85,7 +101,7 @@ def pick_start(base_video: Path) -> float:
 
 
 class MuseTalk(LipSyncEngine):
-    def render(self, base_video, audio, out):
+    def render(self, base_video, audio, out, *, preserve_motion=False):
         repo = config.UPSTREAMS / "MuseTalk"
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
@@ -94,15 +110,22 @@ class MuseTalk(LipSyncEngine):
                 raise RuntimeError(f"Pouco espaço em disco ({free_gb:.1f} GB livres). "
                                    f"O MuseTalk precisa de pelo menos {MIN_FREE_GB} GB.\n{disk_report()}")
             short = tmp / "base.mp4"
-            selected = pick_segment(base_video.resolve(), strict=True)
-            start = selected["start"]
-            subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", str(start), "-i", str(base_video.resolve()),
-                            "-t", str(selected["window_s"]), "-an", "-c:v", "libx264", "-preset", "veryfast",
-                            "-crf", "17", "-pix_fmt", "yuv420p", str(short)], check=True)
+            if preserve_motion:
+                seconds = media.duration(audio)
+                if media.duration(base_video) + 0.05 < seconds:
+                    raise ValueError("A cena gerada não cobre a fala. Ela não será recortada ou repetida.")
+                # The generated scene is already aligned to 25fps. Keep every motion frame.
+                shutil.copyfile(base_video, short)
+            else:
+                selected = pick_segment(base_video.resolve(), strict=True)
+                start = selected["start"]
+                subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", str(start), "-i", str(base_video.resolve()),
+                                "-t", str(selected["window_s"]), "-an", "-c:v", "libx264", "-preset", "veryfast",
+                                "-crf", "17", "-pix_fmt", "yuv420p", str(short)], check=True)
             cfg = tmp / "task.yaml"
             cfg.write_text(f"task_0:\n video_path: \"{short}\"\n"
                            f" audio_path: \"{audio.resolve()}\"\n")
-            script = patched_inference(repo, tmp / "inference_patched.py")
+            script = patched_inference(repo, tmp / "inference_patched.py", preserve_motion=preserve_motion)
             notes = run_logged([
                 config.venv_python("musetalk"), str(script),
                 "--inference_config", str(cfg),

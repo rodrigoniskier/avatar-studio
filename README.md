@@ -28,15 +28,14 @@ Linux/WSL, Python 3.10+, FFmpeg e FFprobe:
 
 ```bash
 pip install -e '.[dev]'
+pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cpu
+git submodule update --init --depth 1 upstreams/InfiniteTalk upstreams/Wan2.2 upstreams/MuseTalk
 pytest -q
 cp .env.example .env
-# Edite .env; carregue as variáveis no mesmo terminal:
-set -a
-source .env
-set +a
+# Edite .env. O aplicativo e os instaladores leem o arquivo automaticamente.
 ```
 
-Instale os motores conforme [FREE_GENERATION.md](docs/FREE_GENERATION.md). Sem variável de ambiente, os motores padrão são **Chatterbox e MuseTalk reais**. Nomes inválidos causam erro; simulação só é ativada explicitamente.
+Instale os motores conforme [FREE_GENERATION.md](docs/FREE_GENERATION.md). Modelos 14B têm uma pré-checagem conservadora de RAM/VRAM; uma T4/P100 gratuita de 16 GB não é promessa de viabilidade. O instalador para antes de baixar pesos se a máquina não cumprir o orçamento. Sem variável de ambiente, os motores padrão são **Chatterbox e MuseTalk reais**. Nomes inválidos causam erro; simulação só é ativada explicitamente.
 
 ```bash
 bash scripts/setup_upstreams.sh musetalk
@@ -76,5 +75,7 @@ STUDIO_TTS=mock STUDIO_LIPSYNC=mock studio serve
 ```
 
 A interface marca o resultado como **simulação**. Os testes exercitam API, autorização, fila, aprovações, cache e processamento real com FFmpeg, substituindo as inferências dos modelos. Isso não valida qualidade de clonagem ou capacidade GPU.
+
+Veja [correções das revisões independentes](docs/INDEPENDENT_REVIEW_FIXES.md).
 
 Leia [arquitetura](docs/ARCHITECTURE.md), [operação gratuita](docs/DEPLOYMENT.md), [guia](docs/GUIA_PASSO_A_PASSO.md) e [licenças de terceiros](THIRD_PARTY.md).

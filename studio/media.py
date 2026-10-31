@@ -32,15 +32,17 @@ def prepare_voice(src: Path, dst: Path, start: float = 0, seconds: float = 30) -
           "-ar", "24000", "-af", "loudnorm", str(dst)])
 
 
-def prepare_video(src: Path, dst: Path, min_seconds: float = 10, max_seconds: float | None = 120) -> None:
+def prepare_video(src: Path, dst: Path, min_seconds: float = 10, max_seconds: float | None = 120,
+                  fps: int | None = 25, lossless: bool = False) -> None:
     """Derivado H.264/25 fps até 120 s, preservando resolução; o original fica no perfil."""
     if not NORMALIZE:
         shutil.copy(src, dst); return
     if duration(src) < min_seconds:
         raise ValueError("O vídeo tem menos de 10 s. Grave de 30 a 120 s.")
     limit = ["-t", str(max_seconds)] if max_seconds is not None else []
-    _run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(src), *limit, "-r", "25",
-          "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2", "-c:v", "libx264", "-crf", "17", "-pix_fmt", "yuv420p",
+    rate = ["-r", str(fps)] if fps else []
+    _run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(src), *limit, *rate,
+          "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2", "-c:v", "libx264", "-crf", "0" if lossless else "17", "-pix_fmt", "yuv420p",
           "-c:a", "aac", str(dst)])
 
 
@@ -69,9 +71,16 @@ def split_audio(src: Path, folder: Path, seconds: int) -> list[Path]:
 
 
 def concat_videos(parts: list[Path], audio: Path, out: Path) -> None:
+    fields = ("codec_name", "width", "height", "pix_fmt", "r_frame_rate", "time_base", "profile")
+    descriptions = []
+    for part in parts:
+        stream = next(s for s in probe(part)["streams"] if s["codec_type"] == "video")
+        descriptions.append(tuple(stream.get(key) for key in fields))
+    if len(set(descriptions)) != 1:
+        raise ValueError("As cenas têm formatos incompatíveis para montagem sem recompressão.")
     # Paths are app-generated; escape apostrophes for the concat demuxer.
     listing = out.with_suffix(".concat.txt")
     listing.write_text("".join("file '" + str(p.resolve()).replace("'", "'\\''") + "'\n" for p in parts))
     _run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(listing),
-          "-i", str(audio), "-map", "0:v:0", "-map", "1:a:0", "-c:v", "libx264", "-crf", "17",
+          "-i", str(audio), "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy",
           "-c:a", "aac", "-shortest", "-movflags", "+faststart", str(out)])

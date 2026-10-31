@@ -26,3 +26,9 @@ Estados: queued → running → awaiting_audio → queued/render → running →
 - A fila persiste apenas enquanto o diretório de dados existir. Não é armazenamento remoto gratuito automático.
 - `studio doctor` verifica instalação, não certifica memória/compatibilidade/qualidade de inferência.
 - Downloads/modelos ficam fora do Git; revisão de pesos é registrada pelo instalador. Consulte THIRD_PARTY.md.
+
+## Correções das revisões independentes
+
+Atenção usa overlay completo (chamadas diretas, faces e dtype), sem alterar os gitlinks. MuseTalk distingue dublagem com seleção de trecho de sincronização de cena inteira. No modo motion, toda a duração do vídeo condutor é validada antes da geração. Uma trava de arquivo é herdada pelo subprocesso de inferência: se o servidor morrer, um novo consumidor aguarda o processo antigo liberar a GPU.
+
+A pré-checagem de recursos é conservadora, não prova de inferência. O doctor testa imports e um microkernel CUDA quando há ambiente compatível. Novos alertas de sinal, escuridão e congelamento ajudam a revisão humana; o escopo automático continua limitado. Veja INDEPENDENT_REVIEW_FIXES.md.

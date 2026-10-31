@@ -38,6 +38,20 @@ def inspect(audio: Path, expected: str, lang: str) -> dict:
               "clipped_fraction": sum(abs(x) >= 32760 for x in samples) / len(samples),
               "rms_dbfs": round(20 * math.log10(max(rms, 1) / 32768), 2),
               "transcription": "not_requested", "voice_similarity": "not_measured"}
+    warnings = []
+    if report["clipped_fraction"] > 0.01:
+        warnings.append("Saturação detectada na fala; confira distorção antes de aprovar.")
+    silence, longest, silent_frames = 0, 0, 0
+    for start in range(0, len(samples), 1600):
+        frame = samples[start:start+1600]
+        quiet = sum(x*x for x in frame) / max(1, len(frame)) < 104**2  # about -50 dBFS
+        silence = silence + 1 if quiet else 0
+        silent_frames += int(quiet)
+        longest = max(longest, silence)
+    report["longest_silence_seconds"] = longest / 10
+    if longest >= 15:
+        warnings.append("Há pausas de pelo menos 1,5 s; confira omissões, repetições e ritmo.")
+    report["warnings"] = warnings
     if rms < 1:
         raise ValueError("A fala gerada está silenciosa.")
     if os.getenv("STUDIO_TRANSCRIBE", "0") == "1":

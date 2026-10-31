@@ -144,7 +144,7 @@ def test_failed_render_retries_without_resynthesizing(monkeypatch):
 
 def test_authentication_covers_files_and_queue(monkeypatch):
     monkeypatch.setattr(config, "ACCESS_TOKEN", "private-session")
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://localhost")
     assert client.get("/").status_code == 200
     assert client.get("/profiles").status_code == 401
     assert client.get("/jobs/any/audio").status_code == 401
@@ -247,6 +247,7 @@ def test_word_error_rate_is_comparison_not_timbre_score():
 
 def test_infinite_adapter_uses_image_audio_and_local_model_paths(tmp_path, monkeypatch):
     from studio.engines import generative
+    monkeypatch.setattr(generative.resources, "require", lambda engine: {"ok": True})
     monkeypatch.setattr(config, "UPSTREAMS", tmp_path / "upstreams")
     monkeypatch.setattr(config, "venv_python", lambda name: "/local/isolated/python")
     repo = config.UPSTREAMS / "InfiniteTalk"
@@ -283,6 +284,9 @@ def test_qwen_adapter_requires_local_weights_and_exact_transcript(tmp_path, monk
         qwen_tts.QwenTTS().synthesize("Nova fala", ref, dest)
     (config.MODELS / "qwen3").mkdir(parents=True)
     (config.MODELS / "qwen3/config.json").write_text("{}")
+    (config.MODELS / "qwen3/speech_tokenizer").mkdir()
+    (config.MODELS / "qwen3/speech_tokenizer/config.json").write_text("{}")
+    (config.MODELS / "qwen3/download.json").write_text(json.dumps({"repo": config.QWEN_MODEL}))
     with pytest.raises(ValueError, match="transcrição exata"):
         qwen_tts.QwenTTS().synthesize("Nova fala", ref, dest)
     ref.with_suffix(".txt").write_text("Texto da referência")
@@ -321,18 +325,22 @@ def test_musetalk_rejects_bad_framing_in_real_render_mode(tmp_path, monkeypatch)
 
 def test_wan_adapter_transfers_motion_without_flux_or_paid_prompt_service(tmp_path, monkeypatch):
     from studio.engines import generative
+    monkeypatch.setattr(generative.resources, "require", lambda engine: {"ok": True})
     monkeypatch.setattr(config, "UPSTREAMS", tmp_path / "upstreams")
     monkeypatch.setattr(config, "venv_python", lambda name: "/local/python")
     repo = config.UPSTREAMS / "Wan2.2"; repo.mkdir(parents=True)
     (repo / "generate.py").touch()
-    (config.MODELS / "wan-animate/process_checkpoint").mkdir(parents=True)
+    (config.MODELS / "wan-animate/process_checkpoint/pose2d").mkdir(parents=True)
+    (config.MODELS / "wan-animate/process_checkpoint/pose2d/vitpose_h_wholebody.onnx").touch()
+    (config.MODELS / "wan-animate/process_checkpoint/det").mkdir()
+    (config.MODELS / "wan-animate/process_checkpoint/det/yolov10m.onnx").touch()
     image = tmp_path / "image.png"; image.touch()
     motion = tmp_path / "other-motion.mp4"; motion.touch()
     out = tmp_path / "out.mp4"
     calls = []
     def run(cmd, cwd=None):
         calls.append(cmd)
-        if "generate.py" in cmd:
+        if "--task" in cmd:
             out.touch()
     monkeypatch.setattr(generative, "run_logged", run)
     generative.WanAnimate().render(image, motion, tmp_path / "audio.wav", "Gesture", out, 12)
