@@ -4,3 +4,6 @@ data/
 .env
 .venv/
 upstreams/*/
+.venvs/
+models/
+.pytest_cache/

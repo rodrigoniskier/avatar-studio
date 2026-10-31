@@ -1,40 +1,81 @@
 # Avatar Studio
 
-Estúdio pessoal, estilo HeyGen, para gerar vídeos do **seu próprio avatar com a sua própria voz** a partir de texto — montado só com projetos open source e sem custo adicional.
+Estúdio pessoal de voz e vídeo sintéticos, com **inferência local e modelos gratuitos**. Não usa API comercial, assinatura, créditos promocionais nem aluguel automático de GPU.
 
-```
-texto (ou tema → roteiro Gemini) → voz clonada (Chatterbox) → lip-sync no seu vídeo base (LatentSync / MuseTalk) → MP4
-```
+O software é gratuito; execução depende do hardware já disponível ou das cotas e regras de um ambiente gratuito. Não existe garantia de GPU contínua, compatibilidade com toda placa, ausência de deformações ou qualidade equivalente a modelos comerciais.
 
-## Como funciona o "avatar"
-Como no *Instant Avatar* do HeyGen: você grava **uma vez** um vídeo de 30–120 s olhando para a câmera (boa luz, boca visível, sem mão na frente do rosto) e um áudio limpo de 10–30 s. O app regrava a boca do vídeo para falar qualquer texto, na sua voz.
+## Modalidades
 
-## Uso rápido (sem GPU, engines falsos para testar)
+| Modo | Entrada visual | Resultado |
+|---|---|---|
+| `dub` | Seu vídeo original | Nova fala sincronizada na gravação; conserva movimentos/cenário e pode repetir o trecho |
+| `avatar` | Uma imagem sua + direção de atuação | InfiniteTalk gera novos movimentos a partir da imagem e do áudio |
+| `motion` | Sua imagem + outro vídeo de movimento | Wan-Animate transfere atuação; MuseTalk/LatentSync sincroniza a nova fala |
+
+Cada perfil preserva os originais. A imagem e o vídeo de movimento são referências independentes; corpo inteiro exige uma imagem com corpo inteiro. Os motores de vídeo generativo são **experimentais até validação GPU com seus arquivos**.
+
+## Fluxo
+
+1. Cadastre voz, vídeo e imagem opcional, com autorização.
+2. Selecione o trecho de referência (início e duração) e confira o áudio. Qwen3 exige a transcrição exata desse trecho.
+3. Prepare a fala, ouça e aprove antes de renderizar.
+4. A fila SQLite salva o progresso. Cenas concluídas são reutilizadas após interrupção quando entradas/configuração continuam iguais.
+5. O arquivo passa por inspeção de áudio, duração e decodificação. Revise identidade, anatomia e sincronização antes de aprovar o vídeo.
+
+## Instalação do aplicativo
+
+Linux/WSL, Python 3.10+, FFmpeg e FFprobe:
+
 ```bash
-pip install -e ".[dev]" && pytest -q
-studio serve            # http://127.0.0.1:8000
+pip install -e '.[dev]'
+pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cpu
+git submodule update --init --depth 1 upstreams/InfiniteTalk upstreams/Wan2.2 upstreams/MuseTalk
+pytest -q
+cp .env.example .env
+# Edite .env. O aplicativo e os instaladores leem o arquivo automaticamente.
 ```
 
-## Uso real (GPU)
-Veja [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — local com GPU NVIDIA ou **gratuito via Kaggle** (`scripts/kaggle_launch.py`).
+Instale os motores conforme [FREE_GENERATION.md](docs/FREE_GENERATION.md). Modelos 14B têm uma pré-checagem conservadora de RAM/VRAM; uma T4/P100 gratuita de 16 GB não é promessa de viabilidade. O instalador para antes de baixar pesos se a máquina não cumprir o orçamento. Sem variável de ambiente, os motores padrão são **Chatterbox e MuseTalk reais**. Nomes inválidos causam erro; simulação só é ativada explicitamente.
+
 ```bash
-git clone --recurse-submodules <este repo> && cd avatar-studio
-bash scripts/setup_upstreams.sh musetalk   # ou: latentsync (>=18 GB VRAM)
-cp .env.example .env   # STUDIO_TTS=chatterbox, STUDIO_LIPSYNC=musetalk
-studio profile eu --voice minha_voz.wav --video meu_video.mp4 --i-consent
-studio generate eu "Olá! Este é o meu avatar falando." --lang pt
+bash scripts/setup_upstreams.sh musetalk
+studio doctor
+studio serve
 ```
 
-> Primeira vez e sem experiência? Siga o [guia passo a passo](docs/GUIA_PASSO_A_PASSO.md).
+Abra http://127.0.0.1:8000. Para acesso em rede, defina `STUDIO_ACCESS_TOKEN`; a interface pede essa chave. O launcher Kaggle gera uma chave por sessão.
 
-## Estrutura
-| Pasta | Conteúdo |
-|---|---|
-| `studio/` | App próprio: API FastAPI, CLI, pipeline, engines plugáveis, consentimento |
-| `web/` | Interface web (arquivo único) |
-| `upstreams/` | Projetos de terceiros como submódulos, em commits fixados |
-| `scripts/` | Instalação dos upstreams e launcher Kaggle/Colab |
-| `docs/` | Arquitetura, hospedagem, licenças |
+## Motores opcionais
 
-## Uso responsável
-Só crie perfis da **sua** voz/imagem (ou de quem autorizou por escrito). O app exige consentimento registrado por perfil; o Chatterbox já embute marca d'água de áudio (PerTh). Informe o público quando o conteúdo for sintético.
+```bash
+bash scripts/setup_generative.sh qwen3
+bash scripts/setup_generative.sh infinitetalk
+bash scripts/setup_generative.sh wan-animate
+# Opcional: transcrição local para comparar a fala ao texto
+bash scripts/setup_generative.sh qa
+```
+
+`STUDIO_TTS=qwen3`, `STUDIO_VIDEO=infinitetalk`, `STUDIO_TRANSCRIBE=1` ativam as opções correspondentes. As instalações são separadas: não é necessário baixar todos os modelos.
+
+## CLI
+
+```bash
+studio profile eu --voice voz.wav --video original.mp4 --image retrato.png --voice-seconds 20 --i-consent
+studio generate eu 'Olá! Esta é a minha nova fala.' --mode avatar
+# Ouça speech.wav no caminho informado; então:
+studio approve-audio ID_DO_TRABALHO
+```
+
+A CLI gera arquivos no diretório do trabalho. A interface usa a fila SQLite e disponibiliza aprovação visual. `studio worker --once` processa uma etapa da fila sem servidor.
+
+## Verificação sem GPU
+
+```bash
+STUDIO_TTS=mock STUDIO_LIPSYNC=mock studio serve
+```
+
+A interface marca o resultado como **simulação**. Os testes exercitam API, autorização, fila, aprovações, cache e processamento real com FFmpeg, substituindo as inferências dos modelos. Isso não valida qualidade de clonagem ou capacidade GPU.
+
+Veja [correções das revisões independentes](docs/INDEPENDENT_REVIEW_FIXES.md).
+
+Leia [arquitetura](docs/ARCHITECTURE.md), [operação gratuita](docs/DEPLOYMENT.md), [guia](docs/GUIA_PASSO_A_PASSO.md) e [licenças de terceiros](THIRD_PARTY.md).

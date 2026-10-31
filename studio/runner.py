@@ -2,6 +2,7 @@
 import os
 import subprocess
 from collections import deque
+from .lease import worker_lease
 
 # O Kaggle/Jupyter define MPLBACKEND com um módulo que não existe nos venvs isolados.
 NOTABLE = ("quadro ignorado", "Quadros gravados", "Error", "error", "Traceback")
@@ -9,7 +10,9 @@ ENV = {"MPLBACKEND": "Agg", "PYTHONUNBUFFERED": "1"}
 
 
 def run_logged(cmd, cwd=None, input_text=None, env=None):
+    lease_fd = worker_lease.get()
     p = subprocess.Popen(cmd, cwd=cwd, env={**os.environ, **ENV, **(env or {})}, text=True,
+                         pass_fds=(lease_fd,) if lease_fd is not None else (),
                          stdin=subprocess.PIPE if input_text else None,
                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     if input_text:

@@ -1,27 +1,34 @@
 # Arquitetura
 
-## Projetos escolhidos (licenças conferidas nos repositórios em 29/10/2026)
-| Função | Projeto | Licença do código | Papel | Observação |
-|---|---|---|---|---|
-| Voz clonada | [resemble-ai/chatterbox](https://github.com/resemble-ai/chatterbox) | MIT | **Principal** | Multilíngue V3 com `pt`; há finetune dedicado pt-BR; clona com ~10 s de áudio; marca d'água PerTh |
-| Voz (alternativa) | [QwenLM/Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS) | Apache-2.0 | Reserva (adapter ainda não escrito) | Clone em 3 s, português suportado; modelos 0.6B/1.7B |
-| Lip-sync (qualidade) | [bytedance/LatentSync](https://github.com/bytedance/LatentSync) | Apache-2.0 | **Principal** | v1.6 (512px) ≈ 18 GB VRAM; v1.5 ≈ 8 GB |
-| Lip-sync (leve/rápido) | [TMElyralab/MuseTalk](https://github.com/TMElyralab/MuseTalk) | MIT | Alternativa | Roda em ~4 GB (fp16); mais lento nessa placa, qualidade menor |
-| Transcrição (legendas/QA) | [SYSTRAN/faster-whisper](https://github.com/SYSTRAN/faster-whisper) | MIT | Futuro | Legendas automáticas e checagem da fala gerada |
-| Roteiro | Gemini via Google AI Studio | — | Opcional | Chave gratuita (limites do plano gratuito da API) |
+FastAPI + interface HTML, CLI, subprocessos isolados e fila SQLite. Apenas inferência local gratuita. Roteiro manual ou Ollama local opcional.
 
-> Licença do **código** ≠ licença dos **pesos/dependências**. Verifique os model cards antes de qualquer uso comercial. Para uso pessoal/educacional não há impedimento conhecido.
+## Etapas
 
-## Descartados (e por quê)
-- **F5-TTS**: código MIT, mas pesos pré-treinados CC-BY-NC (não comercial).
-- **Coqui XTTS-v2**: licença CPML não comercial.
-- **Fish Speech**: licença "Community License" própria (revisada em 13/10/2026) — exige leitura jurídica.
-- **Wav2Lip / SadTalker**: qualidade inferior aos atuais e licenças restritivas.
+1. Perfil transacional: originais preservados, voz recortada explicitamente, transcrição opcional e imagem de identidade. Consentimento registrado só após sucesso.
+2. Trabalho com configurações/revisões registradas. O worker mantém uma trava de SO por diretório de dados, serializando uso de GPU entre processos Linux/WSL.
+3. TTS: Chatterbox multilíngue ou Qwen3 Base. Hashes e metadados validam o cache; arquivos corrompidos não são reutilizados.
+4. Inspeção do sinal de áudio; faster-whisper opcional compara o texto. Aprovação humana da fala é obrigatória antes da renderização.
+5. Dublagem direta ou cenas geradas. InfiniteTalk recebe imagem+fala+prompt. Wan-Animate recebe imagem+movimento, seguido de sincronização labial. Cenas têm assinaturas e marcadores escritos após inspeção.
+6. FFmpeg verifica faixas, duração e decodificação completa. Escrita final é atômica; arquivo parcial não vira resultado pronto.
+7. Revisão visual humana aprova ou rejeita identidade/anatomia/sincronização. Simulações são identificadas e não recebem aprovação como inferência real.
 
-## Fluxo
-1. `POST /profiles/{nome}`: voz + vídeo base + consentimento → `data/profiles/{nome}/`
-2. `POST /jobs`: texto dividido em frases (~300 caracteres) → TTS por trecho → concatenação (ffmpeg) → lip-sync → `output.mp4`
-3. `GET /jobs/{id}`: polling; `GET /jobs/{id}/video`: download.
+## Persistência
 
-## Próximos passos (backlog)
-1. Adapter Qwen3-TTS; 2. legendas com faster-whisper; 3. fila persistente para múltiplas execuções; 4. troca de fundo / b-roll; 5. fine-tune da voz pt-BR com mais áudio.
+`queue.sqlite3` guarda pedidos, fase, configurações, estado e erro. `jobs/<id>/` guarda áudio, aprovação, cenas, vídeo e relatórios. Ao obter a trava exclusiva, o consumidor recupera trabalhos que ficaram em execução após queda. Referências e configurações alteradas invalidam aprovações/caches apropriados.
+
+Estados: queued → running → awaiting_audio → queued/render → running → review → done/rejected. Falhas ficam em error e podem ser retomadas. Motores mock terminam em simulation.
+
+## Limites explícitos
+
+- A inspeção automática técnica não mede identidade, anatomia ou qualidade perceptual de sincronização.
+- Cada cena recebe uma imagem; perfis adicionais permitem outros enquadramentos, sem condicionamento multivista conjunto.
+- Cenas podem ter cortes perceptíveis. Não há garantia de plano longo contínuo.
+- A fila persiste apenas enquanto o diretório de dados existir. Não é armazenamento remoto gratuito automático.
+- `studio doctor` verifica instalação, não certifica memória/compatibilidade/qualidade de inferência.
+- Downloads/modelos ficam fora do Git; revisão de pesos é registrada pelo instalador. Consulte THIRD_PARTY.md.
+
+## Correções das revisões independentes
+
+Atenção usa overlay completo (chamadas diretas, faces e dtype), sem alterar os gitlinks. MuseTalk distingue dublagem com seleção de trecho de sincronização de cena inteira. No modo motion, toda a duração do vídeo condutor é validada antes da geração. Uma trava de arquivo é herdada pelo subprocesso de inferência: se o servidor morrer, um novo consumidor aguarda o processo antigo liberar a GPU.
+
+A pré-checagem de recursos é conservadora, não prova de inferência. O doctor testa imports e um microkernel CUDA quando há ambiente compatível. Novos alertas de sinal, escuridão e congelamento ajudam a revisão humana; o escopo automático continua limitado. Veja INDEPENDENT_REVIEW_FIXES.md.
