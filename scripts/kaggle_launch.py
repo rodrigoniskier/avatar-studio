@@ -3,11 +3,12 @@
 Sobe o app e imprime uma URL pública temporária (Cloudflare Quick Tunnel, sem conta).
 Primeira execução: ~10-20 min (instala ambientes e baixa modelos). Baixe o MP4 antes de encerrar.
 """
-import os, re, subprocess, time
+import os, re, secrets, subprocess, time
 
 REPO = "https://github.com/rodrigoniskier/avatar-studio"
 os.environ.update(STUDIO_TTS="chatterbox", STUDIO_LIPSYNC="musetalk",
                   STUDIO_DATA="/kaggle/working/data", STUDIO_DEVICE="cuda", STUDIO_HEAVY="/root/studio_heavy")
+os.environ.setdefault("STUDIO_ACCESS_TOKEN", secrets.token_urlsafe(32))
 
 if not os.path.isdir("avatar-studio"):
     subprocess.run(f"git clone {REPO}", shell=True, check=True)
@@ -39,5 +40,6 @@ for line in tun.stderr:
     m = re.search(r"https://[-a-z0-9]+\.trycloudflare\.com", line)
     if m:
         print("ABRA NO NAVEGADOR:", m.group(0), flush=True)
+        print("CHAVE DE ACESSO (cole em Acesso à sessão):", os.environ["STUDIO_ACCESS_TOKEN"], flush=True)
         break
 time.sleep(10**6)  # mantém a sessão viva; pare o notebook quando terminar

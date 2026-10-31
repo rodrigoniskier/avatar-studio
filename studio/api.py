@@ -1,14 +1,42 @@
+import hmac
+import json
+import tempfile
+import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from starlette.concurrency import run_in_threadpool
 
-import tempfile
+from . import config, jobs, profiles
 
-from . import config, consent, media, pipeline
 
-app = FastAPI(title="Avatar Studio")
+@asynccontextmanager
+async def lifespan(app):
+    worker = jobs.Worker()
+    worker.thread.start()
+    yield
+    worker.stop.set()
+    worker.thread.join(timeout=2)
+
+
+app = FastAPI(title="Avatar Studio", lifespan=lifespan)
 WEB = Path(__file__).resolve().parent.parent / "web" / "index.html"
+
+
+@app.middleware("http")
+async def authorization(request: Request, call_next):
+    if config.ACCESS_TOKEN and request.url.path != "/":
+        supplied = request.headers.get("authorization", "").removeprefix("Bearer ")
+        if not hmac.compare_digest(supplied, config.ACCESS_TOKEN):
+            return JSONResponse({"detail": "Informe a chave de acesso desta sessão."}, status_code=401)
+    try:
+        return await call_next(request)
+    except (ValueError, PermissionError) as error:
+        return JSONResponse({"detail": str(error)}, status_code=400)
+    except FileNotFoundError as error:
+        return JSONResponse({"detail": str(error)}, status_code=404)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -16,74 +44,130 @@ def index():
     return WEB.read_text()
 
 
+@app.get("/capabilities")
+def capabilities():
+    return {"free_only": True, "tts": config.TTS_ENGINE, "lipsync": config.LIPSYNC_ENGINE,
+            "video": config.VIDEO_ENGINE, "simulation": "mock" in {config.TTS_ENGINE, config.LIPSYNC_ENGINE},
+            "modes": ["dub", "avatar", "motion"]}
+
+
 @app.get("/profiles")
 def list_profiles():
     root = config.DATA_DIR / "profiles"
-    ok = sorted(d.name for d in root.iterdir()
-                if (d / "consent.json").exists() and (d / "voice.wav").exists()
-                and (d / "avatar.mp4").exists()) if root.exists() else []
-    return {"profiles": ok}
+    return {"profiles": sorted(d.name for d in root.iterdir() if (d / "consent.json").exists()
+                                and (d / "voice.wav").exists() and (d / "avatar.mp4").exists()) if root.exists() else []}
+
+
+async def save_upload(upload: UploadFile, folder: Path, label: str) -> Path:
+    suffix = Path(upload.filename or "").suffix.lower()
+    if len(suffix) > 10 or not suffix[1:].isalnum():
+        suffix = ".bin"
+    path = folder / (label + suffix)
+    total = 0
+    with path.open("wb") as target:
+        while block := await upload.read(1024 * 1024):
+            total += len(block)
+            if total > config.MAX_UPLOAD_MB * 1024 * 1024:
+                raise HTTPException(413, f"Arquivo excede {config.MAX_UPLOAD_MB} MB.")
+            target.write(block)
+    return path
 
 
 @app.post("/profiles/{name}")
 async def create_profile(name: str, voice: UploadFile = File(...), video: UploadFile = File(...),
-                         consent_ok: bool = Form(...)):
-    if not name.isidentifier():
-        raise HTTPException(400, "Nome de perfil inválido: use só letras, números e _ (sem espaços ou acentos)")
+                         consent_ok: bool = Form(...), image: UploadFile | None = File(None),
+                         transcript: str = Form(""), voice_start: float = Form(0), voice_seconds: float = Form(30)):
     if not consent_ok:
-        raise HTTPException(400, "É necessário confirmar o consentimento")
-    pdir = config.profile_dir(name)
-    pdir.mkdir(parents=True, exist_ok=True)
+        raise HTTPException(400, "É necessário confirmar o consentimento.")
     with tempfile.TemporaryDirectory() as tmp:
-        v, a = Path(tmp) / "v", Path(tmp) / "a"
-        v.write_bytes(await voice.read()); a.write_bytes(await video.read())
-        try:
-            media.prepare_voice(v, pdir / "voice.wav")
-            media.prepare_video(a, pdir / "avatar.mp4")
-        except ValueError as e:
-            raise HTTPException(400, str(e))
-    consent.register(pdir, name)  # só registra quando o perfil está completo
+        folder = Path(tmp)
+        v = await save_upload(voice, folder, "voice")
+        a = await save_upload(video, folder, "video")
+        i = await save_upload(image, folder, "image") if image else None
+        await run_in_threadpool(profiles.create, name, v, a, image=i, transcript=transcript,
+                                voice_start=voice_start, voice_seconds=voice_seconds)
     return {"profile": name}
 
 
-def _run(profile, text, lang, job_id):
-    try:
-        pipeline.generate(profile, text, lang, job_id)
-    except Exception as e:  # registra falha para o front consultar
-        (config.job_dir(job_id) / "error.txt").write_text(str(e))
+@app.get("/profiles/{name}/voice")
+def reference_voice(name: str):
+    path = config.profile_dir(name) / "voice.wav"
+    if not path.exists():
+        raise HTTPException(404)
+    return FileResponse(path, media_type="audio/wav")
 
 
 @app.post("/jobs")
-def create_job(bg: BackgroundTasks, profile: str = Form(...), text: str = Form(...),
-               lang: str = Form("pt")):
-    import uuid
-    job_id = uuid.uuid4().hex[:12]
-    config.job_dir(job_id).mkdir(parents=True, exist_ok=True)
-    bg.add_task(_run, profile, text, lang, job_id)
-    return {"job_id": job_id}
+async def create_job(profile: str = Form(...), text: str = Form(...), lang: str = Form("pt"),
+                     mode: str = Form("dub"), prompt: str = Form("Natural speaking, restrained gestures, static camera."),
+                     motion: UploadFile | None = File(None)):
+    from . import consent, pipeline, media
+    consent.require(config.profile_dir(profile))
+    pipeline.split_text(text)
+    if len(text) > 50000 or len(prompt) > 4000 or mode not in {"dub", "avatar", "motion"} or lang not in {"pt", "en", "es"}:
+        raise HTTPException(400, "Texto, idioma, direção ou modo inválido.")
+    if mode == "motion" and motion is None:
+        raise HTTPException(400, "Envie o vídeo de movimento.")
+    jid = uuid.uuid4().hex[:12]
+    folder = config.job_dir(jid)
+    folder.mkdir(parents=True)
+    if motion:
+        src = await save_upload(motion, folder, "motion_original")
+        await run_in_threadpool(media.prepare_video, src, folder / "motion.mp4", min_seconds=0.1, max_seconds=None)
+    jobs.enqueue({"profile": profile, "text": text, "lang": lang, "mode": mode, "prompt": prompt}, jid)
+    return {"job_id": jid}
 
 
 @app.get("/jobs")
 def list_jobs():
-    root = config.DATA_DIR / "jobs"
-    done = sorted((d for d in root.iterdir() if (d / "output.mp4").exists()),
-                  key=lambda d: (d / "output.mp4").stat().st_mtime, reverse=True) if root.exists() else []
-    return {"jobs": [{"id": d.name, "url": f"/jobs/{d.name}/video"} for d in done]}
+    return {"jobs": [{"id": r["id"], "status": r["status"], "url": f"/jobs/{r['id']}/video"} for r in jobs.list_all()]}
 
 
 @app.get("/jobs/{job_id}")
 def job_status(job_id: str):
-    jdir = config.job_dir(job_id)
-    if (jdir / "output.mp4").exists():
-        return {"status": "done", "url": f"/jobs/{job_id}/video"}
-    if (jdir / "error.txt").exists():
-        return {"status": "error", "error": (jdir / "error.txt").read_text()}
-    return {"status": "running"} if jdir.exists() else {"status": "unknown"}
+    row = jobs.get(job_id)
+    result = {"status": row["status"], "error": row["error"], "phase": row["phase"],
+              "scenes_completed": len(list((config.job_dir(job_id) / "scenes").glob("*.ready.json"))),
+              "audio_url": f"/jobs/{job_id}/audio", "url": f"/jobs/{job_id}/video"}
+    report = config.job_dir(job_id) / "quality.json"
+    if report.exists():
+        result["quality"] = json.loads(report.read_text())
+    speech_report = config.job_dir(job_id) / "speech_quality.json"
+    if speech_report.exists():
+        result["speech_quality"] = json.loads(speech_report.read_text())
+    return result
+
+
+@app.get("/jobs/{job_id}/audio")
+def job_audio(job_id: str):
+    path = config.job_dir(job_id) / "speech.wav"
+    if not path.exists():
+        raise HTTPException(404)
+    return FileResponse(path, media_type="audio/wav")
+
+
+@app.post("/jobs/{job_id}/approve-audio")
+def approve_audio(job_id: str):
+    jobs.approve_audio(job_id)
+    return {"status": "queued"}
+
+
+@app.post("/jobs/{job_id}/retry")
+def retry(job_id: str):
+    jobs.retry(job_id)
+    return {"status": "queued"}
+
+
+@app.post("/jobs/{job_id}/review")
+def review(job_id: str, accepted: bool = Form(...)):
+    jobs.review(job_id, accepted)
+    return {"status": "done" if accepted else "rejected"}
 
 
 @app.get("/jobs/{job_id}/video")
 def job_video(job_id: str):
-    f = config.job_dir(job_id) / "output.mp4"
-    if not f.exists():
+    row = jobs.get(job_id)
+    path = config.job_dir(job_id) / "output.mp4"
+    if row["status"] not in {"review", "done", "rejected", "simulation"} or not path.exists():
         raise HTTPException(404)
-    return FileResponse(f, media_type="video/mp4")
+    return FileResponse(path, media_type="video/mp4")

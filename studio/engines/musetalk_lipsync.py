@@ -55,15 +55,20 @@ def patched_inference(repo: Path, dest: Path) -> Path:
     return dest
 
 
-def pick_start(base_video: Path) -> float:
+def pick_segment(base_video: Path, strict: bool = False) -> dict:
     """Início do trecho mais estável do vídeo base (rosto inteiro, parado). 0 se não der para decidir."""
     try:
         r = subprocess.run([config.venv_python("musetalk"), str(PICK), str(base_video), str(BASE_SECONDS)],
                            capture_output=True, text=True, timeout=600, check=True)
         info = json.loads(r.stdout.strip().splitlines()[-1])
     except Exception as e:  # sem OpenCV/venv ou vídeo ilegível: comportamento antigo
+        if strict:
+            raise RuntimeError(f"Não foi possível avaliar o enquadramento do rosto: {e}") from e
         print(f"Não foi possível escolher o trecho do vídeo base ({e}); usando o início.", flush=True)
-        return 0.0
+        return {"start": 0.0, "window_s": BASE_SECONDS}
+    if strict and (not info.get("found") or info.get("score", 0) > 0.5):
+        raise RuntimeError("Nenhum trecho com rosto inteiro e estável foi encontrado. "
+                           "Use uma referência com câmera parada e rosto visível.")
     if info.get("found"):
         print(f"Trecho estável do vídeo base: começa em {info['start']} s "
               f"(janela de {info.get('window_s')} s, rosto ocupa {info.get('face_width_ratio')} da largura).",
@@ -71,7 +76,12 @@ def pick_start(base_video: Path) -> float:
     else:
         print("Nenhum trecho estável com rosto inteiro foi encontrado no vídeo base; usando o início. "
               "Regrave com o rosto centralizado e a câmera parada.", flush=True)
-    return float(info.get("start", 0.0))
+    return {"start": float(info.get("start", 0.0)),
+            "window_s": float(info.get("window_s", BASE_SECONDS))}
+
+
+def pick_start(base_video: Path) -> float:
+    return pick_segment(base_video)["start"]
 
 
 class MuseTalk(LipSyncEngine):
@@ -84,9 +94,10 @@ class MuseTalk(LipSyncEngine):
                 raise RuntimeError(f"Pouco espaço em disco ({free_gb:.1f} GB livres). "
                                    f"O MuseTalk precisa de pelo menos {MIN_FREE_GB} GB.\n{disk_report()}")
             short = tmp / "base.mp4"
-            start = pick_start(base_video.resolve())
+            selected = pick_segment(base_video.resolve(), strict=True)
+            start = selected["start"]
             subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", str(start), "-i", str(base_video.resolve()),
-                            "-t", str(BASE_SECONDS), "-an", "-c:v", "libx264", "-preset", "veryfast",
+                            "-t", str(selected["window_s"]), "-an", "-c:v", "libx264", "-preset", "veryfast",
                             "-crf", "17", "-pix_fmt", "yuv420p", str(short)], check=True)
             cfg = tmp / "task.yaml"
             cfg.write_text(f"task_0:\n video_path: \"{short}\"\n"
@@ -106,5 +117,9 @@ class MuseTalk(LipSyncEngine):
                 raise RuntimeError("O MuseTalk terminou sem gerar o vídeo (provável falta de espaço em disco "
                                    "ou falha do ffmpeg). Avisos do MuseTalk:\n" + "\n".join(notes)
                                    + f"\n{disk_report()}")
+            if any("quadro ignorado:" in note for note in notes):
+                raise RuntimeError("MuseTalk não conseguiu sincronizar todos os quadros. "
+                                   "O resultado precisa de outra referência ou ajuste de enquadramento.\n"
+                                   + "\n".join(notes))
             shutil.copy(made[0], out)
         return out

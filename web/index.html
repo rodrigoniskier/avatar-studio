@@ -1,46 +1,54 @@
 <!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Avatar Studio</title>
-<style>body{font:16px system-ui;max-width:640px;margin:2rem auto;padding:0 1rem}input,textarea,button,select{width:100%;margin:.3rem 0;padding:.5rem;box-sizing:border-box}fieldset{margin:1rem 0}.st{font-weight:600}.err{color:#b00020}.ok{color:#146c2e}</style>
-<h1>Avatar Studio</h1>
-<fieldset><legend>1. Perfil (uma vez)</legend>
-<p id="have" class="st"></p>
-<input id="pname" placeholder="nome_do_perfil (sem espaços ou acentos)">
-<label>Áudio da sua voz (10–30 s, sem ruído; qualquer formato)<input id="voice" type="file" accept="audio/*"></label>
-<label>Vídeo seu falando olhando para a câmera (30–120 s, MP4/MOV)<input id="video" type="file" accept="video/*"></label>
-<label><input id="ok" type="checkbox" style="width:auto"> Sou a pessoa retratada e autorizo a geração de mídia sintética.</label>
-<button id="bp" onclick="mk()">Criar perfil</button><p id="stp" class="st"></p></fieldset>
-<fieldset><legend>2. Gerar vídeo</legend>
-<input id="gp" placeholder="nome_do_perfil"><textarea id="text" rows="6" placeholder="Texto que o avatar vai falar"></textarea>
-<select id="lang"><option value="pt">Português</option><option value="en">English</option><option value="es">Español</option></select>
-<button id="bg" onclick="gen()">Gerar</button><p id="stg" class="st"></p><video id="out" controls style="width:100%"></video></fieldset>
-<fieldset><legend>3. Vídeos gerados (mais recentes primeiro)</legend><div id="vids">Nenhum ainda.</div><button onclick="vids()">Atualizar lista</button></fieldset>
+<style>body{font:16px system-ui;max-width:820px;margin:2rem auto;padding:0 1rem;color:#183047;background:#f7fafc}input,textarea,button,select{width:100%;margin:.35rem 0;padding:.65rem;box-sizing:border-box;font:inherit}fieldset{margin:1rem 0;background:white;border:1px solid #cad6e0;border-radius:10px;padding:1rem}button{cursor:pointer;background:#194b69;color:white;border:0;border-radius:5px}button:disabled{opacity:.5}label{display:block;margin:.6rem 0}.err{color:#a01919}.ok{color:#146c2e}video,audio{width:100%}.row{border-top:1px solid #ddd;padding:.7rem 0}small{display:block}h1{margin-bottom:.3rem}</style>
+<h1>Avatar Studio</h1><p>Voz e imagem próprias, com modelos gratuitos executados no seu ambiente.</p>
+<details><summary>Acesso à sessão</summary><label>Chave de acesso, quando solicitada<input id="token" type="password" autocomplete="off"></label><button id="connect">Conectar</button></details>
+<p id="cap"></p><p id="error" role="alert" class="err"></p>
+<fieldset><legend>1. Sua identidade</legend><p id="profiles"></p>
+<label>Nome do novo perfil<input id="name" placeholder="meu_perfil"></label>
+<label>Gravação limpa da sua voz<input id="voice" type="file" accept="audio/*"></label>
+<label>Início do trecho de voz, em segundos<input id="start" type="number" min="0" value="0"></label>
+<label>Duração da referência, de 5 a 30 segundos<input id="seconds" type="number" min="5" max="30" value="20"></label>
+<label>Transcrição exata desse trecho, necessária para Qwen3<textarea id="transcript" rows="2"></textarea></label>
+<label>Vídeo original seu, com boa iluminação e câmera estável<input id="video" type="file" accept="video/*"></label>
+<label>Imagem de identidade para novas cenas (opcional: usa um quadro do vídeo)<input id="image" type="file" accept="image/*"></label>
+<small>Use uma imagem nítida com o enquadramento desejado. Corpo inteiro exige referência que mostre o corpo. Os originais são preservados.</small>
+<label><input id="consent" type="checkbox" style="width:auto"> Sou a pessoa retratada ou tenho sua autorização para gerar mídia sintética.</label>
+<button id="create">Criar perfil</button><p id="profile_status" role="status"></p><audio id="reference" controls hidden></audio>
+</fieldset>
+<fieldset><legend>2. Preparar a fala</legend>
+<label>Perfil<select id="profile"></select></label>
+<label>Como produzir<select id="mode"><option value="dub">Dublar minha gravação</option><option value="avatar">Gerar atuação a partir da minha imagem</option><option value="motion">Usar movimentos de outro vídeo</option></select></label>
+<label id="motion_label" hidden>Vídeo de movimento (deve cobrir toda a fala)<input id="motion" type="file" accept="video/*"></label>
+<label>Texto falado<textarea id="text" rows="6" maxlength="50000"></textarea></label>
+<label>Idioma<select id="lang"><option value="pt">Português</option><option value="en">English</option><option value="es">Español</option></select></label>
+<label>Direção da atuação e da cena<textarea id="prompt" rows="2" maxlength="4000">Natural speaking, restrained gestures, static camera.</textarea></label>
+<small>Para cenas geradas, prefira uma direção simples. A imagem define sua aparência e o enquadramento.</small>
+<button id="generate">Preparar áudio para ouvir</button></fieldset>
+<fieldset><legend>3. Ouvir e aprovar</legend><p id="status" role="status">Selecione um trabalho abaixo.</p>
+<audio id="audio" controls hidden></audio><button id="approve" hidden>Aprovo a fala; gerar vídeo</button><button id="retry" hidden>Retomar etapa com erro</button>
+<video id="out" controls hidden></video><p id="quality"></p>
+<div id="review" hidden><p>Confira rosto, boca, dentes, mãos, estabilidade e sincronização da fala.</p><button id="accept">Aprovar revisão visual</button><button id="reject">Marcar problemas no resultado</button></div>
+<button id="download" hidden>Baixar vídeo</button></fieldset>
+<fieldset><legend>Trabalhos salvos nesta sessão de execução</legend><div id="jobs"></div><button id="refresh">Atualizar</button></fieldset>
 <script>
-const $=i=>document.getElementById(i);
-function say(id,msg,cls){const e=$(id);e.textContent=msg;e.className='st '+(cls||'')}
-async function errText(r){const t=await r.text();try{const j=JSON.parse(t);return typeof j.detail=='string'?j.detail:JSON.stringify(j.detail)}catch(e){return r.status+' '+t.slice(0,200)}}
-async function refresh(){try{const j=await (await fetch('/profiles')).json();
-$('have').textContent=j.profiles.length?'Perfis prontos: '+j.profiles.join(', '):'Nenhum perfil criado ainda.';
-if(j.profiles.length&&!$('gp').value)$('gp').value=j.profiles[0]}catch(e){}}
-async function mk(){
- if(!$('pname').value||!$('voice').files[0]||!$('video').files[0]||!$('ok').checked)return say('stp','Preencha o nome, escolha os dois arquivos e marque o consentimento.','err');
- const f=new FormData();f.append('voice',$('voice').files[0]);f.append('video',$('video').files[0]);f.append('consent_ok',$('ok').checked);
- $('bp').disabled=true;say('stp','Enviando e convertendo… (pode levar 1–2 min)');
- try{const r=await fetch('/profiles/'+encodeURIComponent($('pname').value),{method:'POST',body:f});
-  if(r.ok){say('stp','Perfil "'+$('pname').value+'" criado!','ok');$('gp').value=$('pname').value;refresh()}
-  else say('stp','Erro ao criar perfil: '+await errText(r),'err')}
- catch(e){say('stp','Falha de conexão ao enviar os arquivos: '+e,'err')}
- $('bp').disabled=false}
-async function gen(){
- if(!$('gp').value||!$('text').value)return say('stg','Informe o perfil e o texto.','err');
- const f=new FormData();f.append('profile',$('gp').value);f.append('text',$('text').value);f.append('lang',$('lang').value);
- $('bg').disabled=true;say('stg','Gerando… (a primeira vez carrega os modelos e demora)');
- try{const r=await fetch('/jobs',{method:'POST',body:f});if(!r.ok)throw new Error(await errText(r));
-  const {job_id}=await r.json();
-  const t=setInterval(async()=>{try{const j=await (await fetch('/jobs/'+job_id)).json();
-   if(j.status=='done'){clearInterval(t);say('stg','Pronto!','ok');vids();$('out').src=j.url;$('bg').disabled=false}
-   else if(j.status=='error'){clearInterval(t);say('stg','Erro: '+j.error,'err');$('bg').disabled=false}}catch(e){}},3000)}
- catch(e){say('stg','Erro: '+e.message,'err');$('bg').disabled=false}}
-async function vids(){try{const j=await (await fetch('/jobs')).json();
-$('vids').innerHTML=j.jobs.length?j.jobs.map((v,i)=>'<p>Vídeo '+(j.jobs.length-i)+' ('+v.id+') — <a href="'+v.url+'" target="_blank">abrir</a> · <a href="'+v.url+'" download="avatar_'+v.id+'.mp4">baixar</a></p>').join(''):'Nenhum ainda.'}catch(e){}}
-refresh();vids();setInterval(vids,15000);
+const $=id=>document.getElementById(id);
+let active=localStorage.getItem('avatar_active')||'', timer, lastMedia='', lastStatus='';
+$('token').value=sessionStorage.getItem('avatar_token')||'';
+async function api(path, options={}){const headers={...options.headers};const token=$('token').value;if(token)headers.Authorization='Bearer '+token;const r=await fetch(path,{...options,headers});if(!r.ok){let msg;try{msg=(await r.json()).detail}catch{msg=r.statusText}throw Error(typeof msg==='string'?msg:JSON.stringify(msg))}return r}
+function showError(e){$('error').textContent=e.message}
+async function media(el,path){const blob=await(await api(path)).blob();if(el.src.startsWith('blob:'))URL.revokeObjectURL(el.src);el.src=URL.createObjectURL(blob);el.hidden=false}
+async function refresh(){try{const c=await(await api('/capabilities')).json();$('cap').textContent=c.simulation?'Modo de simulação: os resultados não representam clonagem real.':'Execução local · voz: '+c.tts+' · vídeo: '+c.video;const p=await(await api('/profiles')).json();$('profiles').textContent=p.profiles.length?'Perfis: '+p.profiles.join(', '):'Crie seu primeiro perfil.';const selected=$('profile').value;$('profile').replaceChildren(...p.profiles.map(n=>new Option(n,n)));if(p.profiles.includes(selected))$('profile').value=selected;const list=await(await api('/jobs')).json();$('jobs').replaceChildren(...list.jobs.map(j=>{const d=document.createElement('div');d.className='row';const b=document.createElement('button');b.textContent=j.id+' — '+(labels[j.status]||j.status);b.onclick=()=>select(j.id);d.append(b);return d}));$('error').textContent=''}catch(e){showError(e)}}
+const labels={queued:'Na fila',running:'Executando',awaiting_audio:'Ouça e aprove a fala',review:'Vídeo pronto para revisão visual',done:'Aprovado',simulation:'Simulação',rejected:'Resultado com problemas',error:'Etapa interrompida'};
+async function select(id){active=id;localStorage.setItem('avatar_active',id);lastMedia='';lastStatus='';await poll()}
+async function poll(){clearTimeout(timer);if(!active)return;try{const j=await(await api('/jobs/'+active)).json();$('status').textContent=(labels[j.status]||j.status)+(j.error?': '+j.error:'');$('approve').hidden=j.status!=='awaiting_audio';$('retry').hidden=j.status!=='error';$('review').hidden=j.status!=='review';const ready=['review','done','rejected','simulation'].includes(j.status);$('download').hidden=!ready;$('out').hidden=!ready;$('audio').hidden=!['awaiting_audio','review','done','rejected','simulation'].includes(j.status);if(lastMedia!==active+':'+j.status){if(!$('audio').hidden)await media($('audio'),j.audio_url);if(ready)await media($('out'),j.url);lastMedia=active+':'+j.status}$('quality').textContent=ready?(j.status==='simulation'?'Arquivo de simulação.':'Arquivo verificado tecnicamente. Identidade, anatomia e sincronização exigem sua revisão.') : '';if(lastStatus!==j.status){lastStatus=j.status;await refresh()}}catch(e){showError(e)}timer=setTimeout(poll,2000)}
+$('connect').onclick=()=>{sessionStorage.setItem('avatar_token',$('token').value);refresh();poll()};
+$('create').onclick=async()=>{const button=$('create');button.disabled=true;try{if(!$('consent').checked)throw Error('Confirme a autorização.');if(!$('voice').files[0]||!$('video').files[0])throw Error('Selecione voz e vídeo.');const f=new FormData();for(const name of ['voice','video','image'])if($(name).files[0])f.append(name,$(name).files[0]);f.append('consent_ok','true');f.append('transcript',$('transcript').value);f.append('voice_start',$('start').value);f.append('voice_seconds',$('seconds').value);await api('/profiles/'+encodeURIComponent($('name').value),{method:'POST',body:f});$('profile_status').textContent='Perfil criado. Confira o trecho de referência abaixo.';await media($('reference'),'/profiles/'+encodeURIComponent($('name').value)+'/voice');await refresh();$('profile').value=$('name').value}catch(e){showError(e)}finally{button.disabled=false}};
+$('mode').onchange=()=>{$('motion_label').hidden=$('mode').value!=='motion'};
+$('generate').onclick=async()=>{const b=$('generate');b.disabled=true;try{const f=new FormData();for(const n of ['profile','text','lang','mode','prompt'])f.append(n,$(n).value);if($('mode').value==='motion'){if(!$('motion').files[0])throw Error('Selecione o vídeo de movimento.');f.append('motion',$('motion').files[0])}const j=await(await api('/jobs',{method:'POST',body:f})).json();await select(j.job_id);refresh()}catch(e){showError(e)}finally{b.disabled=false}};
+async function action(name,data){try{await api('/jobs/'+active+'/'+name,{method:'POST',body:data});await poll();await refresh()}catch(e){showError(e)}}
+$('approve').onclick=()=>action('approve-audio');$('retry').onclick=()=>action('retry');
+for(const [id,accepted]of [['accept','true'],['reject','false']])$(id).onclick=()=>{const f=new FormData();f.append('accepted',accepted);action('review',f)};
+$('download').onclick=async()=>{try{const r=await api('/jobs/'+active+'/video');const url=URL.createObjectURL(await r.blob());const a=document.createElement('a');a.href=url;a.download='avatar_'+active+'.mp4';a.click();setTimeout(()=>URL.revokeObjectURL(url),10000)}catch(e){showError(e)}};
+$('refresh').onclick=refresh;refresh();if(active)poll();
 </script></html>

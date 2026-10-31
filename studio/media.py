@@ -20,22 +20,58 @@ def duration(path: Path) -> float:
     return float(json.loads(out)["format"]["duration"])
 
 
-def prepare_voice(src: Path, dst: Path) -> None:
+def prepare_voice(src: Path, dst: Path, start: float = 0, seconds: float = 30) -> None:
     """WAV mono 24 kHz, recortado em 30 s (suficiente para clonar)."""
+    if start < 0 or not 5 <= seconds <= 30:
+        raise ValueError("Selecione um início válido e duração de 5 a 30 segundos.")
     if not NORMALIZE:
         shutil.copy(src, dst); return
-    if duration(src) < 5:
+    if start < 0 or not 5 <= seconds <= 30 or duration(src) - start < 5:
         raise ValueError("O áudio da voz tem menos de 5 s. Grave de 10 a 30 s.")
-    _run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(src), "-t", "30", "-ac", "1",
+    _run(["ffmpeg", "-y", "-loglevel", "error", "-ss", str(start), "-i", str(src), "-t", str(seconds), "-ac", "1",
           "-ar", "24000", "-af", "loudnorm", str(dst)])
 
 
-def prepare_video(src: Path, dst: Path) -> None:
-    """MP4 H.264, 25 fps, até 720p, máx. 120 s (limita memória e tempo de GPU)."""
+def prepare_video(src: Path, dst: Path, min_seconds: float = 10, max_seconds: float | None = 120) -> None:
+    """Derivado H.264/25 fps até 120 s, preservando resolução; o original fica no perfil."""
     if not NORMALIZE:
         shutil.copy(src, dst); return
-    if duration(src) < 10:
+    if duration(src) < min_seconds:
         raise ValueError("O vídeo tem menos de 10 s. Grave de 30 a 120 s.")
-    _run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(src), "-t", "120", "-r", "25",
-          "-vf", "scale=-2:'min(720,ih)'", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+    limit = ["-t", str(max_seconds)] if max_seconds is not None else []
+    _run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(src), *limit, "-r", "25",
+          "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2", "-c:v", "libx264", "-crf", "17", "-pix_fmt", "yuv420p",
           "-c:a", "aac", str(dst)])
+
+
+def prepare_image(src: Path, dst: Path, from_video: bool = False) -> None:
+    if not NORMALIZE:
+        shutil.copyfile(src, dst)
+        return
+    args = ["ffmpeg", "-y", "-loglevel", "error"]
+    if from_video:
+        args += ["-ss", "1"]
+    _run(args + ["-i", str(src), "-frames:v", "1", str(dst)])
+
+
+def probe(path: Path) -> dict:
+    return json.loads(_run(["ffprobe", "-v", "error", "-show_streams", "-show_format",
+                            "-of", "json", str(path)]))
+
+
+def split_audio(src: Path, folder: Path, seconds: int) -> list[Path]:
+    if not 5 <= seconds <= 30:
+        raise ValueError("As cenas devem durar entre 5 e 30 segundos.")
+    folder.mkdir(parents=True, exist_ok=True)
+    _run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(src), "-f", "segment",
+          "-segment_time", str(seconds), "-c:a", "pcm_s16le", str(folder / "scene%04d.wav")])
+    return sorted(folder.glob("scene*.wav"))
+
+
+def concat_videos(parts: list[Path], audio: Path, out: Path) -> None:
+    # Paths are app-generated; escape apostrophes for the concat demuxer.
+    listing = out.with_suffix(".concat.txt")
+    listing.write_text("".join("file '" + str(p.resolve()).replace("'", "'\\''") + "'\n" for p in parts))
+    _run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(listing),
+          "-i", str(audio), "-map", "0:v:0", "-map", "1:a:0", "-c:v", "libx264", "-crf", "17",
+          "-c:a", "aac", "-shortest", "-movflags", "+faststart", str(out)])

@@ -29,8 +29,15 @@ def test_end_to_end_api():
     assert c.post("/profiles/eu", files=files, data={"consent_ok": "true"}).status_code == 200
     assert c.get("/profiles").json() == {"profiles": ["eu"]}
     jid = c.post("/jobs", data={"profile": "eu", "text": "Olá mundo."}).json()["job_id"]
+    from studio import jobs
+    jobs.drain_one()
     st = c.get(f"/jobs/{jid}").json()
-    assert st["status"] == "done"
+    assert st["status"] == "awaiting_audio"
+    assert c.get(st["audio_url"]).status_code == 200
+    assert c.post(f"/jobs/{jid}/approve-audio").status_code == 200
+    jobs.drain_one()
+    st = c.get(f"/jobs/{jid}").json()
+    assert st["status"] == "simulation"
     assert c.get(st["url"]).content == b"fake"
     assert c.get("/jobs").json()["jobs"][0]["id"] == jid
 
@@ -56,7 +63,10 @@ def test_speech_reused_when_only_lipsync_failed(monkeypatch):
     (pdir / "voice.wav").write_bytes(b"x"); (pdir / "avatar.mp4").write_bytes(b"v")
     calls = []
     real = pipeline.get_tts
-    monkeypatch.setattr(pipeline, "get_tts", lambda n: (calls.append(1), real(n))[1])
+    engine = real("mock")
+    batch = engine.synthesize_batch
+    monkeypatch.setattr(engine, "synthesize_batch", lambda *a, **k: (calls.append(1), batch(*a, **k))[1])
+    monkeypatch.setattr(pipeline, "get_tts", lambda n: engine)
     pipeline.generate("eu", "Frase um. Frase dois.")
     pipeline.generate("eu", "Frase um. Frase dois.")
     assert len(calls) == 1  # segunda execução reaproveita a fala
@@ -76,6 +86,9 @@ def test_musetalk_reports_missing_output(tmp_path, monkeypatch):
         "                except:\n                    continue\n"
         "            print(\"Video generation command:\", cmd_img2video)\n")
     monkeypatch.setattr(config, "UPSTREAMS", tmp_path / "up")
+    import sys
+    monkeypatch.setattr(config, "venv_python", lambda name: sys.executable)
+    monkeypatch.setattr(m, "pick_segment", lambda *a, **k: {"start": 0, "window_s": 20})
     base = tmp_path / "b.mp4"
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=25:duration=30",
                     "-pix_fmt", "yuv420p", str(base)], check=True)
@@ -119,6 +132,8 @@ def test_pick_start_falls_back_to_zero(tmp_path, monkeypatch):
 def test_pick_start_reads_script_result(tmp_path, monkeypatch):
     import subprocess
     from studio.engines import musetalk_lipsync as m
+    from studio import config
+    monkeypatch.setattr(config, "venv_python", lambda name: "python")
     fake = subprocess.CompletedProcess([], 0, stdout='aviso\n{"start": 5.5, "found": true, "window_s": 20, "face_width_ratio": 0.4}\n')
     monkeypatch.setattr(m.subprocess, "run", lambda *a, **k: fake)
     assert m.pick_start(tmp_path / "x.mp4") == 5.5
