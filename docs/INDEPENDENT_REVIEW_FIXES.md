@@ -5,7 +5,7 @@ Revisões recebidas em 31/10/2026. Alvo corrigido: PR #1, inicialmente no commit
 | Achado | Tratamento e evidência |
 |---|---|
 | C1 / atenção sem FlashAttention | Overlay substitui `flash_attention` e `attention` chamadas diretamente nos dois upstreams. Atenção facial corrigida em BLHD e xformers direcionado a SDPA no caminho single-GPU. Regressões numéricas CPU com comprimentos variáveis, padding, máscaras, janelas e escala |
-| C2 / recorte e inversão de cenas | `preserve_motion=True` no segundo estágio. Usa cena inteira; não chama seletor. Sequências do upstream não são invertidas; arredondamento de até dois quadros clona só o último quadro. Testes com 1,5/3/4,8/7/12/15s e pipeline 15+3s |
+| C2 / recorte e inversão de cenas | `preserve_motion=True` no segundo estágio. Usa cena inteira; não chama seletor. Sequências do upstream não são invertidas; arredondamento de até dois quadros clona só o último quadro. Áudio dividido por amostras exatas, sem depender de fronteiras de pacotes do FFmpeg. Testes com 1,5/3/4,8/7/12/15s e pipeline 15+3s |
 | H1 / limites de hardware e BF16 emulado | Escolha de dtype pela capacidade nativa da GPU. Pré-checagem conservadora bloqueia RAM/VRAM insuficiente antes da síntese/download. **Benchmark e inferência GPU continuam pendentes** |
 | M1 / duração do movimento validada tarde | Compara toda a fala e todo o movimento antes de dividir ou renderizar a primeira cena |
 | M2 / modelo Qwen e pesos no cache | Valida manifesto contra modelo configurado. Registra pesos locais por tamanho/mtime/ctime e fontes modificadas dos submódulos; cache de referência/texto continua por hash |

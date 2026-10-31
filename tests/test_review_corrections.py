@@ -290,3 +290,18 @@ def test_motion_pipeline_passes_whole_scene_policy_including_three_second_tail(t
     assert seen[0][0]==pytest.approx(15,abs=.05)
     assert seen[1][0]==pytest.approx(3,abs=.05)
     assert media.duration(jdir/"output.mp4")==pytest.approx(18,abs=.1)
+
+
+def test_audio_segments_are_sample_exact_and_reassemble_without_loss(tmp_path):
+    import wave
+    audio=tmp_path/"master.wav"
+    run_ffmpeg("-f","lavfi","-i","sine=sample_rate=44100:duration=18",audio)
+    parts=media.split_audio(audio,tmp_path/"parts",15)
+    frames=[];blocks=[]
+    for part in parts:
+        with wave.open(str(part),"rb") as reader:
+            frames.append(reader.getnframes())
+            blocks.append(reader.readframes(reader.getnframes()))
+    assert frames==[15*44100,3*44100]
+    with wave.open(str(audio),"rb") as master:
+        assert b''.join(blocks)==master.readframes(master.getnframes())

@@ -3,6 +3,7 @@ import json
 import os
 import shutil
 import subprocess
+import wave
 from pathlib import Path
 
 NORMALIZE = os.getenv("STUDIO_NORMALIZE", "1") == "1"
@@ -65,9 +66,24 @@ def split_audio(src: Path, folder: Path, seconds: int) -> list[Path]:
     if not 5 <= seconds <= 30:
         raise ValueError("As cenas devem durar entre 5 e 30 segundos.")
     folder.mkdir(parents=True, exist_ok=True)
-    _run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(src), "-f", "segment",
-          "-segment_time", str(seconds), "-c:a", "pcm_s16le", str(folder / "scene%04d.wav")])
-    return sorted(folder.glob("scene*.wav"))
+    # The segment muxer splits on packet boundaries, which vary by FFmpeg version.
+    # Decode once and split exact PCM samples. Keep the approved master untouched.
+    pcm = folder / "source_pcm.wav"
+    _run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(src), "-map", "0:a:0",
+          "-c:a", "pcm_s16le", str(pcm)])
+    parts = []
+    try:
+        with wave.open(str(pcm), "rb") as source:
+            frames = source.getframerate() * seconds
+            while block := source.readframes(frames):
+                path = folder / f"scene{len(parts):04d}.wav"
+                with wave.open(str(path), "wb") as out:
+                    out.setparams(source.getparams())
+                    out.writeframes(block)
+                parts.append(path)
+    finally:
+        pcm.unlink(missing_ok=True)
+    return parts
 
 
 def concat_videos(parts: list[Path], audio: Path, out: Path) -> None:

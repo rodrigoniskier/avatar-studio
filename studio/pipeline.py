@@ -1,5 +1,6 @@
 """Produção por etapas: fala, aprovação, cenas, inspeção e revisão visual."""
 import json
+import math
 import re
 import shutil
 import subprocess
@@ -205,7 +206,8 @@ def _render_scenes(pdir, jdir, audio, output, mode, prompt):
             engine.render(identity, driving, part, prompt, raw, config.SEED + i)
             trimmed = folder / f"trim{i:04d}.mp4"
             media._run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(raw), "-t", str(seconds),
-                        "-an", "-r", "25", "-c:v", "libx264", "-crf", "0", str(trimmed)])
+                        "-an", "-r", "25", "-frames:v", str(math.ceil(seconds * 25)),
+                        "-c:v", "libx264", "-crf", "0", str(trimmed)])
             if mode == "motion":
                 get_lipsync(config.LIPSYNC_ENGINE).render(trimmed, part, scene, preserve_motion=True)
             else:

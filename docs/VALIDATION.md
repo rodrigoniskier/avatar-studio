@@ -4,10 +4,10 @@ Data: 31/10/2026. Revisão anterior: PR #1 em `71eb4238115099faf66d6dff45f55ceec
 
 ## Verificações executadas
 
-- 93 testes CPU com pytest, incluindo cálculos reais PyTorch 2.4.1+cpu, arquivos reais FFmpeg e código dos upstreams nos SHAs fixados.
+- 94 testes CPU com pytest, incluindo cálculos reais PyTorch 2.4.1+cpu, arquivos reais FFmpeg e código dos upstreams nos SHAs fixados.
 - Comparação de atenção com softmax explícito independente: padding, comprimentos variáveis, causalidade inferior direita, janelas, escala, layout facial e rejeição de valores não finitos. As funções efetivas dos upstreams são extraídas dos overlays e executadas sem FlashAttention.
 - Regressão MuseTalk com cenas de 1,5/3/4,8/7/12/15s, preservando todos os frames; código real do adaptador e do script MuseTalk, com inferência neural substituída.
-- Pipeline motion com cenas 15+3s, FFmpeg real, política de cena inteira e montagem sem recompressão. Inferência neural substituída.
+- Pipeline motion com cenas 15+3s, FFmpeg real, política de cena inteira e montagem sem recompressão. Áudio dividido por amostras exatas, com reconstituição PCM sem perdas, evitando diferenças entre versões do muxer FFmpeg. Inferência neural substituída.
 - Fila, aprovação, retomada, alteração de referência/pesos/fontes, Host/Origin, token malformado, pré-checagem de recursos e plano de download integral antes de transferir pesos.
 - Queda real do processo pai, com subprocesso de inferência mantendo a trava até terminar; sem GPU, usando processo de teste.
 - Ruff F/E9, compilação Python, sintaxe JavaScript/Node, Bash e git diff --check. O CI instala Torch CPU e inicializa os submódulos necessários para repetir os contratos.
