@@ -62,6 +62,24 @@ def probe(path: Path) -> dict:
                             "-of", "json", str(path)]))
 
 
+def last_frame(src: Path, dst: Path):
+    # Decode at most the last second, updating the PNG until the final decoded frame.
+    _run(["ffmpeg", "-y", "-loglevel", "error", "-sseof", "-1", "-i", str(src),
+          "-an", "-vsync", "0", "-update", "1", str(dst)])
+    if not dst.exists():
+        raise ValueError("Não foi possível extrair o último quadro da cena anterior.")
+
+
+def inference_audio(src: Path, dst: Path, minimum_seconds: float = 3.4) -> Path:
+    """Silêncio só no derivado de inferência. O áudio aprovado nunca é alterado."""
+    if duration(src) >= minimum_seconds:
+        return src
+    _run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(src), "-af",
+          f"apad=whole_dur={minimum_seconds}", "-ar", "16000", "-ac", "1",
+          "-c:a", "pcm_s16le", str(dst)])
+    return dst
+
+
 def split_audio(src: Path, folder: Path, seconds: int) -> list[Path]:
     if not 5 <= seconds <= 30:
         raise ValueError("As cenas devem durar entre 5 e 30 segundos.")

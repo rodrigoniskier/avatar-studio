@@ -7,3 +7,5 @@ upstreams/*/
 .venvs/
 models/
 .pytest_cache/
+build/
+dist/

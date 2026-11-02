@@ -4,6 +4,7 @@ import uuid
 from pathlib import Path
 
 from . import config, consent, doctor, media, pipeline, profiles
+from .lease import inference_lease
 
 
 def main():
@@ -25,6 +26,8 @@ def main():
     g.add_argument("--mode", choices=["dub", "avatar", "motion"], default="dub")
     g.add_argument("--prompt", default="Natural speaking, restrained gestures, static camera.")
     g.add_argument("--motion", type=Path)
+    g.add_argument("--scene-image", type=Path, help="imagem da nova cena, sem alterar o perfil")
+    g.add_argument("--continuity", choices=["independent", "last_frame"], default="independent")
     a = sub.add_parser("approve-audio", help="aprova a fala e renderiza; pode retomar cenas prontas")
     a.add_argument("job_id")
     d = sub.add_parser("doctor", help="verifica o ambiente")
@@ -42,22 +45,31 @@ def main():
                               voice_start=args.voice_start, voice_seconds=args.voice_seconds))
     elif args.cmd == "generate":
         jid = uuid.uuid4().hex[:12]
+        if args.scene_image:
+            if args.mode == "dub":
+                parser.error("--scene-image exige avatar ou motion")
+            folder = config.job_dir(jid)
+            folder.mkdir(parents=True)
+            media.prepare_image(args.scene_image, folder / "identity.png")
         if args.mode == "motion":
             if not args.motion:
                 parser.error("--mode motion requer --motion")
             folder = config.job_dir(jid)
-            folder.mkdir(parents=True)
+            folder.mkdir(parents=True, exist_ok=True)
             media.prepare_video(args.motion, folder / "motion.mp4", min_seconds=0.1, max_seconds=None,
                                 fps=None, lossless=True)
         if args.mode == "motion":
             args.prompt = ""
             print("A atuação vem do vídeo de movimento; este motor não aceita direção textual.")
-        print(pipeline.generate(args.profile, args.text, args.lang, jid, mode=args.mode, prompt=args.prompt))
+        with inference_lease():
+            print(pipeline.generate(args.profile, args.text, args.lang, jid, mode=args.mode, prompt=args.prompt,
+                                    continuity=args.continuity))
         print(f"Ouça o áudio. Para aprovar: studio approve-audio {jid}")
     elif args.cmd == "approve-audio":
-        pipeline.approve(args.job_id)
-        request = json.loads((config.job_dir(args.job_id) / "job.json").read_text())
-        print(pipeline.generate(**request, job_id=args.job_id, audio_approved=True))
+        with inference_lease():
+            pipeline.approve(args.job_id)
+            request = json.loads((config.job_dir(args.job_id) / "job.json").read_text())
+            print(pipeline.generate(**request, job_id=args.job_id, audio_approved=True))
         print("Confira quality.json e revise rosto, mãos, boca e sincronização antes de publicar.")
     elif args.cmd == "doctor":
         raise SystemExit(0 if doctor.run(args.mode) else 1)

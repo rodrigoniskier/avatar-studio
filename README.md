@@ -28,6 +28,7 @@ Linux/WSL, Python 3.10+, FFmpeg e FFprobe:
 
 ```bash
 pip install -e '.[dev]'
+pip install safetensors
 pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cpu
 git submodule update --init --depth 1 upstreams/InfiniteTalk upstreams/Wan2.2 upstreams/MuseTalk
 pytest -q
@@ -61,10 +62,14 @@ bash scripts/setup_generative.sh qa
 
 ```bash
 studio profile eu --voice voz.wav --video original.mp4 --image retrato.png --voice-seconds 20 --i-consent
-studio generate eu 'Olá! Esta é a minha nova fala.' --mode avatar
+studio generate eu 'Olá! Esta é a minha nova fala.' --mode avatar --scene-image nova_cena.png --continuity last_frame
 # Ouça speech.wav no caminho informado; então:
 studio approve-audio ID_DO_TRABALHO
 ```
+
+A imagem da cena é opcional e não altera o perfil. `last_frame` é experimental: mantém a referência original de identidade e usa o último quadro anterior como condição temporal. Não garante continuidade perfeita.
+
+`performance.json` registra tempo e mínimos de memória livre amostrados, inclusive em falhas. Pode incluir cenas reaproveitadas; não mede pico por processo nem qualidade visual.
 
 A CLI gera arquivos no diretório do trabalho. A interface usa a fila SQLite e disponibiliza aprovação visual. `studio worker --once` processa uma etapa da fila sem servidor.
 
@@ -75,6 +80,16 @@ STUDIO_TTS=mock STUDIO_LIPSYNC=mock studio serve
 ```
 
 A interface marca o resultado como **simulação**. Os testes exercitam API, autorização, fila, aprovações, cache e processamento real com FFmpeg, substituindo as inferências dos modelos. Isso não valida qualidade de clonagem ou capacidade GPU.
+
+O teste de interface abre Chromium real, cadastra perfil, aprova fala e baixa vídeo/relatório. A inferência continua simulada:
+
+```bash
+pip install -e '.[dev,browser]'
+python -m playwright install --with-deps chromium --only-shell
+pytest -q tests/browser_smoke.py
+```
+
+A opção `STUDIO_INFINITETALK_QUANT=fp8` instala o conjunto oficial completo (DiT, T5 e dois mapas), sem baixar os pesos base redundantes. É experimental e não reduz automaticamente os limites de hardware enquanto não houver medições. Consulte o guia antes de ativar.
 
 Veja [correções das revisões independentes](docs/INDEPENDENT_REVIEW_FIXES.md).
 

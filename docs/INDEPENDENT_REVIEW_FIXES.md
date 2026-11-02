@@ -11,7 +11,7 @@ Revisões recebidas em 31/10/2026. Alvo corrigido: PR #1, inicialmente no commit
 | M2 / modelo Qwen e pesos no cache | Valida manifesto contra modelo configurado. Registra pesos locais por tamanho/mtime/ctime e fontes modificadas dos submódulos; cache de referência/texto continua por hash |
 | M3 / prompt ignorado no modo motion | Interface oculta direção por texto nesse modo; API normaliza para vazio, CLI informa a limitação. O vídeo condutor é a direção efetiva |
 | M4 / resolução | Interface/documentação distinguem originais preservados de saída nativa do modelo. Não se promete 1080p por ter referência 1080p |
-| M5 / continuidade e recompressão | Intermediários com CRF 0 e montagem sem recompressão de vídeo compatível. As cenas ainda podem ter cortes de pose/identidade; **não há garantia de continuidade longa** nem condicionamento multivista novo |
+| M5 / continuidade e recompressão | Intermediários com CRF 0 e montagem sem recompressão de vídeo compatível. Continuidade opcional adicionada em 02/11: último quadro como condição temporal, referência original mantida para identidade e invalidação encadeada do cache. As cenas ainda podem ter cortes de pose/identidade; **não há garantia de continuidade longa** nem condicionamento multivista novo |
 | M6 / origem, host e token malformado | Origin diferente é bloqueado. Sem token, Host deve ser localhost/loopback. Token comparado como bytes; caracteres não ASCII não causam HTTP 500 |
 | M7 / transcrição da referência | Qwen exige transcrição e tokenizer local. Com QA de transcrição ativada, compara também referência e `voice.txt`; divergência alta exige conferência |
 | L1 / escopo da inspeção | Rotulagem explícita de integridade/duração/sinal. Alertas de saturação, silêncio prolongado, preto e congelamento; anatomia/identidade continuam sem medição automática |
@@ -37,3 +37,16 @@ Os limites 48/64 GiB de RAM disponível e 12/24 GiB de VRAM livre são **orçame
 - Qwen3-TTS `022e286b98fbec7e1e916cb940cdf532cd9f488e`, carregamento local do tokenizer e APIs de clonagem.
 - [Pesos quantizados publicados pelo InfiniteTalk](https://huggingface.co/MeiGen-AI/InfiniteTalk/tree/main/quant_models).
 - [Release oficial cloudflared 2026.10.7](https://github.com/cloudflare/cloudflared/releases/tag/2026.10.7), SHA-256 do asset linux-amd64 registrado no launcher.
+
+## Continuação em 02/11/2026
+
+- Corrigida a cauda curta do InfiniteTalk: áudio derivado com silêncio suficiente para a janela interna, sem alterar a fala aprovada.
+- T5 por meta/atribuição/mmap; DiT completo por shards em meta. Testes numéricos com checkpoints pequenos reais, incluindo sobrescrita do adaptador e formato legado.
+- Opção FP8 com quatro arquivos oficiais; download elimina DiT/T5 base redundantes e inclui a revisão safetensors do encoder no orçamento inicial.
+- Retarget do Wan sem instalação/import obrigatório de SAM2/FLUX; dependência editável incompatível eliminada. Kokoro é importado apenas nas funções TTS não usadas pela integração. Librosa/setuptools/ninja declarados.
+- Imagem de cena por trabalho, continuidade opcional, telemetria de execução e RAM limitada por cgroup.
+- CLI agora adquire a mesma trava da fila; execuções manuais não concorrem com o worker nem perdem a trava herdada.
+- Chromium encontrou CSS que sobrescrevia `hidden`; corrigido. Teste de interface cobre cadastro, aprovação, controles e downloads.
+- Wheel agora inclui a interface HTML; instalação fora do checkout mantém a página disponível.
+
+Não houve execução neural completa em GPU. Os novos caminhos FP8/continuidade não equivalem a uma aprovação de qualidade ou estabilidade dos modelos. A próxima prova decisiva continua sendo inferência curta com referências reais em hardware compatível gratuito ou próprio.

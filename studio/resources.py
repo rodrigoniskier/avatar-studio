@@ -17,6 +17,16 @@ def snapshot():
         ram = int(fields["MemAvailable"].split()[0]) * 1024 / 1024**3
     except (OSError, KeyError, ValueError):
         pass
+    # Notebook containers may expose the host's RAM while imposing a smaller cgroup limit.
+    for maximum, current in (("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory.current"),
+                             ("/sys/fs/cgroup/memory/memory.limit_in_bytes", "/sys/fs/cgroup/memory/memory.usage_in_bytes")):
+        try:
+            limit, used = int(Path(maximum).read_text()), int(Path(current).read_text())
+            available = max(0, limit-used) / 1024**3
+            ram = available if ram is None else min(ram, available)
+            break
+        except (OSError, ValueError):
+            continue
     gpu = []
     visible = os.getenv("CUDA_VISIBLE_DEVICES")
     if shutil.which("nvidia-smi") and visible not in {"", "-1"}:

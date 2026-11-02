@@ -11,11 +11,12 @@ case "$ENGINE" in
   *) echo "Uso: $0 qwen3|infinitetalk|wan-animate|qa" >&2; exit 2 ;;
 esac
 # Read the same .env as the app without executing shell code from it.
-mapfile -t STUDIO_INSTALL_VALUES < <(python -c 'from studio import config; print(config.VENVS); print(config.UPSTREAMS); print(config.MODELS); print(config.QWEN_MODEL)')
+mapfile -t STUDIO_INSTALL_VALUES < <(python -c 'from studio import config; print(config.VENVS); print(config.UPSTREAMS); print(config.MODELS); print(config.QWEN_MODEL); print(config.INFINITETALK_QUANT)')
 export STUDIO_VENVS="${STUDIO_INSTALL_VALUES[0]:?Instale o aplicativo primeiro: pip install -e .}"
 export STUDIO_UPSTREAMS="${STUDIO_INSTALL_VALUES[1]}"
 export STUDIO_MODELS="${STUDIO_INSTALL_VALUES[2]}"
 export STUDIO_QWEN_MODEL="${STUDIO_INSTALL_VALUES[3]}"
+export STUDIO_INFINITETALK_QUANT="${STUDIO_INSTALL_VALUES[4]}"
 if [ "$ENGINE" = infinitetalk ] || [ "$ENGINE" = wan-animate ]; then
   python -m studio.resources "$ENGINE"
 fi
@@ -45,14 +46,8 @@ else
     uv pip install --python "$PY" torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
   fi
   # _video_worker installs our complete SDPA overlay, including direct calls and face attention.
-  "$PY" -c 'from pathlib import Path; import sys; p=Path(sys.argv[1]); Path(sys.argv[2]).write_text("\n".join(s for s in p.read_text().splitlines() if not s.strip().startswith(("flash_attn", "torch", "torchaudio", "torchvision"))))' \
-    "upstreams/$UPSTREAM/requirements.txt" "$VENV_ROOT/$ENGINE/requirements.filtered.txt"
+  python scripts/video_requirements.py "$ENGINE" "$VENV_ROOT/$ENGINE/requirements.filtered.txt"
   uv pip install --python "$PY" -c "requirements/$ENGINE.txt" -r "$VENV_ROOT/$ENGINE/requirements.filtered.txt" huggingface_hub
-  if [ "$ENGINE" = infinitetalk ]; then
-    uv pip install --python "$PY" -c requirements/infinitetalk.txt xformers==0.0.28 misaki\[en\] einops soundfile
-  else
-    uv pip install --python "$PY" -c requirements/wan-animate.txt -r upstreams/Wan2.2/requirements_animate.txt
-  fi
 fi
 if [ "$ENGINE" = infinitetalk ] || [ "$ENGINE" = wan-animate ]; then
   APP_WORKER="$PWD/studio/engines/_video_worker.py"

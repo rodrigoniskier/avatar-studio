@@ -7,7 +7,7 @@ import subprocess
 import uuid
 from pathlib import Path
 
-from . import config, consent, media, quality, audio_quality, provenance, resources
+from . import config, consent, media, quality, audio_quality, provenance, resources, telemetry
 from .artifacts import digest, signature, write_json
 from .engines import get_lipsync, get_tts, get_video
 
@@ -73,6 +73,7 @@ def settings() -> dict:
             "qwen_model": config.QWEN_MODEL, "revision": config.TTS_REVISION, "seed": config.SEED,
             "cfg": config.CFG_WEIGHT, "exaggeration": config.EXAGGERATION,
             "size": config.VIDEO_SIZE, "scene_seconds": config.SCENE_SECONDS,
+            "infinitetalk_quant": config.INFINITETALK_QUANT,
             "lipsync_steps": config.LIPSYNC_STEPS, "lipsync_guidance": config.LIPSYNC_GUIDANCE,
             "versions": engine_versions()}
 
@@ -109,12 +110,14 @@ def _cached_speech(profile: str, text: str, lang: str) -> Path | None:
 
 def generate(profile: str, text: str, lang: str = "pt", job_id: str | None = None,
              *, mode: str = "dub", prompt: str = "Natural speaking, restrained gestures, static camera.",
-             audio_approved: bool = False) -> Path:
+             audio_approved: bool = False, continuity: str = "independent") -> Path:
     if lang not in {"pt", "en", "es"}:
         raise ValueError("Idioma não suportado. Use pt, en ou es.")
     chunks = split_text(text)
     if mode not in {"dub", "avatar", "motion"}:
         raise ValueError("Modo desconhecido.")
+    if continuity not in {"independent", "last_frame"} or (mode != "avatar" and continuity != "independent"):
+        raise ValueError("Continuidade pelo último quadro é suportada apenas no modo avatar.")
     pdir = config.profile_dir(profile)
     consent.require(pdir)
     voice, video = pdir / "voice.wav", pdir / "avatar.mp4"
@@ -134,6 +137,8 @@ def generate(profile: str, text: str, lang: str = "pt", job_id: str | None = Non
     jdir = config.job_dir(job_id)
     jdir.mkdir(parents=True, exist_ok=True)
     request = {"profile": profile, "text": text, "lang": lang, "mode": mode, "prompt": prompt}
+    if continuity != "independent":
+        request["continuity"] = continuity
     if audio_approved:
         if json.loads((jdir / "job.json").read_text()) != request:
             raise ValueError("O pedido mudou após gerar o áudio.")
@@ -158,10 +163,12 @@ def generate(profile: str, text: str, lang: str = "pt", job_id: str | None = Non
         write_json(jdir / "speech.json", {"key": key, "sha256": digest(audio)})
         return audio
     output = jdir / "rendering.mp4"
-    if mode == "dub":
-        get_lipsync(config.LIPSYNC_ENGINE).render(video, audio, output)
-    else:
-        _render_scenes(pdir, jdir, audio, output, mode, prompt)
+    with telemetry.measure(jdir / "performance.json", {"mode": mode, "continuity": continuity,
+                           "audio_seconds": media.duration(audio), "settings": settings()}):
+        if mode == "dub":
+            get_lipsync(config.LIPSYNC_ENGINE).render(video, audio, output)
+        else:
+            _render_scenes(pdir, jdir, audio, output, mode, prompt, continuity)
     if config.TTS_ENGINE == "mock" or (mode == "dub" and config.LIPSYNC_ENGINE == "mock"):
         report = {"technical": "simulation", "visual_review": "not_applicable"}
     else:
@@ -171,11 +178,11 @@ def generate(profile: str, text: str, lang: str = "pt", job_id: str | None = Non
     return jdir / "output.mp4"
 
 
-def _render_scenes(pdir, jdir, audio, output, mode, prompt):
+def _render_scenes(pdir, jdir, audio, output, mode, prompt, continuity="independent"):
     engine_name = "wan-animate" if mode == "motion" else config.VIDEO_ENGINE
     engine = get_video(engine_name)
     folder = jdir / "scenes"
-    identity = pdir / "identity.png"
+    identity = jdir / "identity.png" if (jdir / "identity.png").exists() else pdir / "identity.png"
     movement = jdir / "motion.mp4" if mode == "motion" else None
     if movement and media.duration(movement) + 0.05 < media.duration(audio):
         raise ValueError("O vídeo de movimento deve cobrir toda a fala; não será repetido.")
@@ -190,7 +197,8 @@ def _render_scenes(pdir, jdir, audio, output, mode, prompt):
         stamp = scene.with_suffix(".ready.json")
         key = signature({"speech": digest(part), "identity": digest(identity),
                          "motion": digest(movement) if movement else None, "offset": offset,
-                         "prompt": prompt, "mode": mode, "settings": settings()})
+                         "previous_scene": digest(videos[-1]) if videos and continuity == "last_frame" else None,
+                         "continuity": continuity, "prompt": prompt, "mode": mode, "settings": settings()})
         try:
             reusable = json.loads(stamp.read_text()) == {"key": key, "sha256": digest(scene)}
         except (OSError, ValueError):
@@ -203,7 +211,12 @@ def _render_scenes(pdir, jdir, audio, output, mode, prompt):
                 driving = folder / f"motion{i:04d}.mp4"
                 media._run(["ffmpeg", "-y", "-loglevel", "error", "-ss", str(offset), "-i", str(movement),
                             "-t", str(seconds), "-an", "-r", "30", "-c:v", "libx264", "-crf", "0", str(driving)])
-            engine.render(identity, driving, part, prompt, raw, config.SEED + i)
+            if videos and continuity == "last_frame":
+                initial = folder / f"initial{i:04d}.png"
+                media.last_frame(videos[-1], initial)
+                engine.render(identity, driving, part, prompt, raw, config.SEED + i, initial_frame=initial)
+            else:
+                engine.render(identity, driving, part, prompt, raw, config.SEED + i)
             trimmed = folder / f"trim{i:04d}.mp4"
             media._run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(raw), "-t", str(seconds),
                         "-an", "-r", "25", "-frames:v", str(math.ceil(seconds * 25)),

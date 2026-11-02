@@ -11,6 +11,9 @@ from huggingface_hub import HfApi, hf_hub_download, snapshot_download
 
 ROOT = Path(os.getenv("STUDIO_MODELS", "models")).resolve()
 QWEN = os.getenv("STUDIO_QWEN_MODEL", "Qwen/Qwen3-TTS-12Hz-1.7B-Base")
+QUANT = os.getenv("STUDIO_INFINITETALK_QUANT", "none")
+FP8_FILES = ["quant_models/" + name for name in ("infinitetalk_single_fp8.safetensors",
+             "infinitetalk_single_fp8.json", "t5_fp8.safetensors", "t5_map_fp8.json")]
 MODELS = {
     "qwen3": [(QWEN, "qwen3", None)],
     "infinitetalk": [
@@ -23,6 +26,8 @@ MODELS = {
 
 
 def plan(engine):
+    if engine == "infinitetalk" and QUANT not in {"none", "fp8"}:
+        raise SystemExit("Use STUDIO_INFINITETALK_QUANT=none ou fp8.")
     plans = []
     for repo, subdir, patterns in MODELS[engine]:
         dest = ROOT / subdir
@@ -31,7 +36,22 @@ def plan(engine):
         if old.get("repo", repo) != repo:
             raise SystemExit("A pasta contém outro modelo. Use um novo STUDIO_MODELS para preservar a instalação anterior.")
         info = HfApi().model_info(repo, revision=old.get("revision"), files_metadata=True)
-        excluded = ["process_checkpoint/FLUX.1-Kontext-dev/**"] if engine == "wan-animate" else None
+        excluded = ["process_checkpoint/FLUX.1-Kontext-dev/**", "process_checkpoint/sam2/**"] if engine == "wan-animate" else None
+        if engine == "infinitetalk" and QUANT == "fp8":
+            if repo == "MeiGen-AI/InfiniteTalk":
+                patterns = FP8_FILES + ["README.md", "LICENSE*"]
+                missing = set(FP8_FILES) - {f.rfilename for f in info.siblings}
+                if missing:
+                    raise SystemExit("Conjunto FP8 incompleto na revisão escolhida: " + ", ".join(sorted(missing)))
+            elif repo == "Wan-AI/Wan2.1-I2V-14B-480P":
+                excluded = ["diffusion_pytorch_model*.safetensors", "models_t5_umt5-xxl-enc-bf16.pth"]
+        patch = None
+        if repo == "TencentGameMate/chinese-wav2vec2-base":
+            patch = HfApi().model_info(repo, revision=old.get("audio_encoder_revision", "refs/pr/1"), files_metadata=True)
+            selected = next((f for f in patch.siblings if f.rfilename == "model.safetensors"), None)
+            if selected is None or selected.size is None:
+                raise SystemExit("Não foi possível planejar o encoder safetensors completo.")
+            excluded = ["model.safetensors", "pytorch_model.bin"]
         required = 0
         for file in info.siblings:
             name = file.rfilename
@@ -42,9 +62,16 @@ def plan(engine):
             if file.size is None and name.endswith((".safetensors", ".pth", ".bin", ".onnx")):
                 raise SystemExit("Tamanho dos pesos indisponível; não é seguro iniciar o download sem estimativa.")
             local = dest / name
-            required += max(0, (file.size or 0) - (local.stat().st_size if local.exists() else 0))
+            # An existing file only counts when the manifest matches the pinned source.
+            valid_local = old.get("revision") == info.sha and local.exists() and local.stat().st_size == file.size
+            required += 0 if valid_local else (file.size or 0)
+        if patch:
+            local = dest / "model.safetensors"
+            valid_local = old.get("audio_encoder_revision") == patch.sha and local.exists() and local.stat().st_size == selected.size
+            required += 0 if valid_local else selected.size
         plans.append({"repo": repo, "dest": dest, "revision": info.sha, "patterns": patterns,
-                      "excluded": excluded, "old": old, "required": required})
+                      "excluded": excluded, "old": old, "required": required,
+                      "audio_encoder_revision": patch.sha if patch else None})
     return plans
 
 
@@ -61,7 +88,7 @@ def download(engine):
         snapshot_download(repo_id=repo, revision=item["revision"], local_dir=dest,
                           allow_patterns=item["patterns"], ignore_patterns=item["excluded"])
         if repo == "TencentGameMate/chinese-wav2vec2-base":
-            patch_revision = old.get("audio_encoder_revision") or HfApi().model_info(repo, revision="refs/pr/1").sha
+            patch_revision = item["audio_encoder_revision"]
             hf_hub_download(repo, "model.safetensors", revision=patch_revision, local_dir=dest)
             old["audio_encoder_revision"] = patch_revision
         manifest = dest / "download.json"

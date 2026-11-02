@@ -54,8 +54,13 @@ def run(mode: str = "dub") -> bool:
             for name in ("pose2d/vitpose_h_wholebody.onnx", "det/yolov10m.onnx"):
                 line((config.MODELS / "wan-animate/process_checkpoint" / name).exists(), "Pré-processador " + name)
         elif engine == "infinitetalk":
-            for name in ("chinese-wav2vec2-base/model.safetensors", "Wan2.1-I2V-14B-480P/config.json",
-                         "InfiniteTalk/single/infinitetalk.safetensors"):
+            files = ["chinese-wav2vec2-base/model.safetensors", "Wan2.1-I2V-14B-480P/config.json"]
+            if config.INFINITETALK_QUANT == "fp8":
+                files += ["InfiniteTalk/quant_models/" + n for n in ("infinitetalk_single_fp8.safetensors",
+                          "infinitetalk_single_fp8.json", "t5_fp8.safetensors", "t5_map_fp8.json")]
+            else:
+                files += ["InfiniteTalk/single/infinitetalk.safetensors"]
+            for name in files:
                 line((config.MODELS / "infinitetalk" / name).exists(), "Arquivo de modelo " + name)
         report = resources.check(engine)
         line(report["ok"], "Orçamento conservador de RAM/VRAM", " ".join(report["reasons"]))

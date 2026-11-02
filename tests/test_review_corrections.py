@@ -253,7 +253,7 @@ def test_download_budget_checks_whole_set_before_first_weight(tmp_path,monkeypat
     class API:
         def model_info(self,repo,**kw):
             metadata.append(repo)
-            return types.SimpleNamespace(sha="fixed",siblings=[types.SimpleNamespace(rfilename="single/weights.safetensors",size=8*1024**3)])
+            return types.SimpleNamespace(sha="fixed",siblings=[types.SimpleNamespace(rfilename="model.safetensors" if kw.get("revision")=="refs/pr/1" else "single/weights.safetensors",size=8*1024**3)])
     fake.HfApi=API;fake.hf_hub_download=lambda *a,**kw:downloads.append(kw)
     fake.snapshot_download=lambda **kw:downloads.append(kw)
     monkeypatch.setitem(sys.modules,"huggingface_hub",fake)
@@ -264,7 +264,7 @@ def test_download_budget_checks_whole_set_before_first_weight(tmp_path,monkeypat
     monkeypatch.setattr(module.shutil,"disk_usage",lambda p:types.SimpleNamespace(free=15*1024**3))
     with pytest.raises(SystemExit,match="conjunto completo"):
         module.download("infinitetalk")
-    assert len(metadata)==3 and not downloads
+    assert len(metadata)==4 and not downloads
 
 
 def test_motion_pipeline_passes_whole_scene_policy_including_three_second_tail(tmp_path,monkeypatch):

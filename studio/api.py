@@ -23,7 +23,7 @@ async def lifespan(app):
 
 
 app = FastAPI(title="Avatar Studio", lifespan=lifespan)
-WEB = Path(__file__).resolve().parent.parent / "web" / "index.html"
+WEB = Path(__file__).resolve().parent / "web" / "index.html"
 
 
 @app.middleware("http")
@@ -116,7 +116,8 @@ def reference_voice(name: str):
 @app.post("/jobs")
 async def create_job(profile: str = Form(...), text: str = Form(...), lang: str = Form("pt"),
                      mode: str = Form("dub"), prompt: str = Form("Natural speaking, restrained gestures, static camera."),
-                     motion: UploadFile | None = File(None)):
+                     motion: UploadFile | None = File(None), image: UploadFile | None = File(None),
+                     continuity: str = Form("independent")):
     from . import consent, pipeline, media, resources
     consent.require(config.profile_dir(profile))
     pipeline.split_text(text)
@@ -124,6 +125,10 @@ async def create_job(profile: str = Form(...), text: str = Form(...), lang: str 
         raise HTTPException(400, "Texto, idioma, direção ou modo inválido.")
     if mode == "motion" and motion is None:
         raise HTTPException(400, "Envie o vídeo de movimento.")
+    if continuity not in {"independent", "last_frame"} or (mode != "avatar" and continuity != "independent"):
+        raise HTTPException(400, "Continuidade pelo último quadro exige o modo avatar.")
+    if image and mode == "dub":
+        raise HTTPException(400, "Imagem de cena exige modo avatar ou motion.")
     if mode != "dub":
         await run_in_threadpool(resources.require, "wan-animate" if mode == "motion" else config.VIDEO_ENGINE)
     if mode == "motion":
@@ -131,11 +136,22 @@ async def create_job(profile: str = Form(...), text: str = Form(...), lang: str 
     jid = uuid.uuid4().hex[:12]
     folder = config.job_dir(jid)
     folder.mkdir(parents=True)
-    if motion:
-        src = await save_upload(motion, folder, "motion_original")
-        await run_in_threadpool(media.prepare_video, src, folder / "motion.mp4", min_seconds=0.1,
-                                max_seconds=None, fps=None, lossless=True)
-    jobs.enqueue({"profile": profile, "text": text, "lang": lang, "mode": mode, "prompt": prompt}, jid)
+    try:
+        if motion:
+            src = await save_upload(motion, folder, "motion_original")
+            await run_in_threadpool(media.prepare_video, src, folder / "motion.mp4", min_seconds=0.1,
+                                    max_seconds=None, fps=None, lossless=True)
+        if image:
+            src = await save_upload(image, folder, "identity_original")
+            await run_in_threadpool(media.prepare_image, src, folder / "identity.png")
+        request = {"profile": profile, "text": text, "lang": lang, "mode": mode, "prompt": prompt}
+        if continuity != "independent":
+            request["continuity"] = continuity
+        jobs.enqueue(request, jid)
+    except Exception:
+        import shutil
+        shutil.rmtree(folder)
+        raise
     return {"job_id": jid}
 
 
@@ -157,7 +173,19 @@ def job_status(job_id: str):
     speech_report = config.job_dir(job_id) / "speech_quality.json"
     if speech_report.exists():
         result["speech_quality"] = json.loads(speech_report.read_text())
+    performance = config.job_dir(job_id) / "performance.json"
+    if performance.exists():
+        result["performance"] = json.loads(performance.read_text())
     return result
+
+
+@app.get("/jobs/{job_id}/performance")
+def job_performance(job_id: str):
+    jobs.get(job_id)
+    path = config.job_dir(job_id) / "performance.json"
+    if not path.exists():
+        raise HTTPException(404, "A renderização ainda não produziu medições.")
+    return FileResponse(path, media_type="application/json", filename="performance.json")
 
 
 @app.get("/jobs/{job_id}/audio")
