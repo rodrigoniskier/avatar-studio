@@ -28,7 +28,6 @@ Linux/WSL, Python 3.10+, FFmpeg e FFprobe:
 
 ```bash
 pip install -e '.[dev]'
-pip install safetensors
 pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cpu
 git submodule update --init --depth 1 upstreams/InfiniteTalk upstreams/Wan2.2 upstreams/MuseTalk
 pytest -q
