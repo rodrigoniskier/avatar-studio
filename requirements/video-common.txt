@@ -1,0 +1,10 @@
+# Núcleo compatível com as APIs dos upstreams fixados; ensaio GPU continua obrigatório.
+transformers==4.51.3
+tokenizers==0.21.4
+diffusers==0.35.1
+accelerate==1.6.0
+huggingface-hub==0.34.4
+numpy==1.26.4
+setuptools==80.9.0
+ninja>=1.11,<2
+librosa==0.10.2.post1

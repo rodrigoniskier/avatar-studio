@@ -13,3 +13,9 @@
 [submodule "upstreams/faster-whisper"]
 	path = upstreams/faster-whisper
 	url = https://github.com/SYSTRAN/faster-whisper
+[submodule "upstreams/InfiniteTalk"]
+	path = upstreams/InfiniteTalk
+	url = https://github.com/MeiGen-AI/InfiniteTalk
+[submodule "upstreams/Wan2.2"]
+	path = upstreams/Wan2.2
+	url = https://github.com/Wan-Video/Wan2.2

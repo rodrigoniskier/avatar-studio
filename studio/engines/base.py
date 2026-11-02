@@ -3,6 +3,9 @@ from pathlib import Path
 
 
 class TTSEngine(ABC):
+    def validate_reference(self, voice_ref: Path, lang: str = "pt") -> None:
+        """Validação leve antes de consultar o cache."""
+
     @abstractmethod
     def synthesize(self, text: str, voice_ref: Path, out: Path, lang: str = "pt") -> Path:
         """Gera `out` (wav) com a voz de `voice_ref`."""
@@ -16,5 +19,5 @@ class TTSEngine(ABC):
 
 class LipSyncEngine(ABC):
     @abstractmethod
-    def render(self, base_video: Path, audio: Path, out: Path) -> Path:
+    def render(self, base_video: Path, audio: Path, out: Path, *, preserve_motion: bool = False) -> Path:
         """Gera `out` (mp4) com o rosto de `base_video` falando `audio`."""

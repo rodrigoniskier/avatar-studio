@@ -3,7 +3,6 @@ import math
 import shutil
 import struct
 import wave
-from pathlib import Path
 
 from .base import LipSyncEngine, TTSEngine
 
@@ -20,6 +19,6 @@ class MockTTS(TTSEngine):
 
 
 class MockLipSync(LipSyncEngine):
-    def render(self, base_video, audio, out):
+    def render(self, base_video, audio, out, *, preserve_motion=False):
         shutil.copy(base_video, out)
         return out
